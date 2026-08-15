@@ -57,6 +57,16 @@ watch:
   port: 8888
   path_prefix: ""
   ignore_extensions: [js, css, map, png, jpg, svg, woff2]
+
+# db.connections is opt-in (empty by default): no db.* assertion can
+# compile until at least one named connection is configured here. dsn
+# values should reference an environment variable (e.g. "${DATABASE_URL}")
+# rather than embedding a plaintext credential.
+# db:
+#   connections:
+#     main:
+#       driver: sqlite   # or postgres
+#       dsn: "${DATABASE_URL}"
 `
 
 const localEnvTemplate = `# Local environment. Do not put real secrets in this file directly —

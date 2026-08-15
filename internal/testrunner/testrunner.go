@@ -54,6 +54,13 @@ func (r *Runner) Run(ctx context.Context, tests []domain.TestCase, opts Options)
 		r.rep.Start(domain.SuiteMeta{Env: string(r.env.CurrentName()), TotalTests: len(tests)})
 	}
 
+	// Clear any responses recorded by a previous Run on this same
+	// Resolver (e.g. the web dashboard reuses one Engine/Resolver across
+	// many `apilens ui` requests) — a chained suite must never resolve
+	// against a stale response from an earlier, unrelated run (DSL v2
+	// chaining, plan.md v9).
+	r.env.ResetResponses()
+
 	start := time.Now()
 	var results []domain.TestResult
 	if opts.Parallel {
@@ -203,11 +210,26 @@ func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) d
 		base.Status = domain.StatusErrored
 		base.Error = lastErr.Error()
 		base.DurationMS = ex.Timing.Duration.Milliseconds()
+		// Still record on error: a chained test referencing "{{responses.
+		// login.status}}" should see the real (failing) status rather
+		// than nothing at all — the reference itself only ever fails if
+		// this test never ran, not if it ran and errored.
+		if tc.ID != "" {
+			r.env.RecordResponse(tc.ID, ex)
+		}
 		return base
 	}
 
 	base.HTTPStatus = ex.Response.StatusCode
 	base.DurationMS = ex.Timing.Duration.Milliseconds()
+
+	// Record BEFORE evaluating assertions so a later chained test can use
+	// this response even if this test's own assertions fail — chaining is
+	// about response data flow, not about gating on pass/fail (DSL v2,
+	// plan.md v9).
+	if tc.ID != "" {
+		r.env.RecordResponse(tc.ID, ex)
+	}
 
 	results := r.assert.Eval(checks, ex)
 	base.Assertions = results

@@ -6,12 +6,14 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/sandeepv/apilens/internal/assertions"
 	"github.com/sandeepv/apilens/internal/config"
+	"github.com/sandeepv/apilens/internal/dbassert"
 	"github.com/sandeepv/apilens/internal/domain"
 	"github.com/sandeepv/apilens/internal/environment"
 	"github.com/sandeepv/apilens/internal/history"
@@ -191,9 +193,13 @@ func (a *App) RunSuite(ctx context.Context, filter RunFilter, out reporter.Repor
 		return domain.Report{}, domain.NewConfigError(
 			"no tests matched — write a YAML test under .apilens/tests or run apilens generate", nil)
 	}
+	if err := validateChainedSuite(tests); err != nil {
+		return domain.Report{}, err
+	}
 
 	httpRunner := runner.New(runner.WithMaxResponseSize(a.Config.MaxResponseSizeBytes()))
-	assertEngine := assertions.New()
+	assertEngine, closeDB := a.buildAssertEngine()
+	defer closeDB()
 
 	tr := testrunner.New(httpRunner, a.Env, assertEngine, out)
 
@@ -210,8 +216,68 @@ func (a *App) RunSuite(ctx context.Context, filter RunFilter, out reporter.Repor
 	if filter.Parallel {
 		opts.Parallel = true
 	}
+	// DSL v2 response chaining (plan.md v9) requires test B to observe
+	// test A's completed response, which is fundamentally incompatible
+	// with runParallel's unordered concurrent execution
+	// (docs/11-risks-and-gaps.md R6). Force sequential the moment any
+	// test in the filtered set references a response — this silently
+	// overrides an explicit --parallel/config parallel:true rather than
+	// erroring, since correctness (chaining actually working) matters
+	// more than honoring a flag that would otherwise race.
+	if anyUsesChaining(tests) {
+		opts.Parallel = false
+	}
 
 	return tr.Run(ctx, tests, opts)
+}
+
+// validateChainedSuite enforces that every non-empty TestCase.ID is unique
+// within the filtered suite — uniqueness is a suite-wide property (two
+// different tests could reuse the same id in unrelated files/directories
+// without either file being wrong on its own), so it can only be checked
+// here, not in testdef.Compile which only ever sees one file at a time.
+func validateChainedSuite(tests []domain.TestCase) error {
+	seen := make(map[string]string, len(tests)) // id -> first file that used it
+	for _, tc := range tests {
+		if tc.ID == "" {
+			continue
+		}
+		if first, ok := seen[tc.ID]; ok {
+			return domain.NewConfigError(
+				fmt.Sprintf("duplicate test id %q used in both %s and %s — ids must be unique within a suite for chaining to be unambiguous", tc.ID, first, tc.File), nil)
+		}
+		seen[tc.ID] = tc.File
+	}
+	return nil
+}
+
+// anyUsesChaining reports whether any test in the suite references
+// another test's response.
+func anyUsesChaining(tests []domain.TestCase) bool {
+	for _, tc := range tests {
+		if tc.UsesChaining {
+			return true
+		}
+	}
+	return false
+}
+
+// buildAssertEngine wires an assertions.Engine with a dbassert.Registry
+// only when the project actually configured at least one db connection
+// (plan.md v9: db.* assertions are opt-in — most runs never construct a
+// Registry at all, and therefore never import a SQL driver's runtime
+// cost into the request path). The returned close func is always safe to
+// defer, even when no registry was built.
+func (a *App) buildAssertEngine() (*assertions.Engine, func()) {
+	if len(a.Config.DB.Connections) == 0 {
+		return assertions.New(), func() {}
+	}
+	conns := make(map[string]dbassert.ConnectionConfig, len(a.Config.DB.Connections))
+	for name, c := range a.Config.DB.Connections {
+		conns[name] = dbassert.ConnectionConfig{Driver: c.Driver, DSN: c.DSN}
+	}
+	reg := dbassert.NewRegistry(conns)
+	return assertions.New(assertions.WithDBRegistry(reg)), reg.Close
 }
 
 // filterTests applies RunFilter to a loaded test set, implementing

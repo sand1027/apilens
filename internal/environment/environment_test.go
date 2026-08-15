@@ -1,6 +1,7 @@
 package environment
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -181,4 +182,133 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// --- DSL v2 chaining (plan.md v9): responses.<id>.* lookups ---
+
+func TestInterpolate_ResponsesStatus(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	if err := r.LoadDir("../../testdata/environments/valid"); err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	_ = r.Use("local")
+
+	r.RecordResponse("login", domain.Exchange{
+		Response: domain.HTTPResponse{StatusCode: 201},
+	})
+
+	got, err := r.Interpolate("{{responses.login.status}}")
+	if err != nil {
+		t.Fatalf("Interpolate: %v", err)
+	}
+	if got != "201" {
+		t.Errorf("got %q, want %q", got, "201")
+	}
+}
+
+func TestInterpolate_ResponsesHeader(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	_ = r.LoadDir("../../testdata/environments/valid")
+	_ = r.Use("local")
+
+	h := http.Header{}
+	h.Set("X-Request-Id", "abc-123")
+	r.RecordResponse("login", domain.Exchange{
+		Response: domain.HTTPResponse{StatusCode: 200, Headers: h},
+	})
+
+	got, err := r.Interpolate("{{responses.login.headers.x-request-id}}")
+	if err != nil {
+		t.Fatalf("Interpolate: %v", err)
+	}
+	if got != "abc-123" {
+		t.Errorf("got %q, want %q", got, "abc-123")
+	}
+}
+
+func TestInterpolate_ResponsesBodyJSONPath(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	_ = r.LoadDir("../../testdata/environments/valid")
+	_ = r.Use("local")
+
+	r.RecordResponse("login", domain.Exchange{
+		Response: domain.HTTPResponse{
+			StatusCode: 200,
+			Body:       []byte(`{"data":{"token":"tok-xyz","id":42}}`),
+		},
+	})
+
+	got, err := r.Interpolate("Bearer {{responses.login.body.data.token}}")
+	if err != nil {
+		t.Fatalf("Interpolate: %v", err)
+	}
+	if got != "Bearer tok-xyz" {
+		t.Errorf("got %q", got)
+	}
+
+	got2, err := r.Interpolate("{{responses.login.body.data.id}}")
+	if err != nil {
+		t.Fatalf("Interpolate: %v", err)
+	}
+	if got2 != "42" {
+		t.Errorf("got %q, want %q", got2, "42")
+	}
+}
+
+func TestInterpolate_ResponsesRawBody(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	_ = r.LoadDir("../../testdata/environments/valid")
+	_ = r.Use("local")
+
+	r.RecordResponse("ping", domain.Exchange{
+		Response: domain.HTTPResponse{StatusCode: 200, Body: []byte("pong")},
+	})
+
+	got, err := r.Interpolate("{{responses.ping.body}}")
+	if err != nil {
+		t.Fatalf("Interpolate: %v", err)
+	}
+	if got != "pong" {
+		t.Errorf("got %q, want %q", got, "pong")
+	}
+}
+
+func TestInterpolate_UnknownResponseIDFailsClosed(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	_ = r.LoadDir("../../testdata/environments/valid")
+	_ = r.Use("local")
+
+	_, err := r.Interpolate("{{responses.never-ran.status}}")
+	if err == nil {
+		t.Fatal("expected error referencing a response that was never recorded")
+	}
+}
+
+func TestInterpolate_MissingJSONPathInResponseBodyFailsClosed(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	_ = r.LoadDir("../../testdata/environments/valid")
+	_ = r.Use("local")
+
+	r.RecordResponse("login", domain.Exchange{
+		Response: domain.HTTPResponse{StatusCode: 200, Body: []byte(`{"data":{}}`)},
+	})
+
+	_, err := r.Interpolate("{{responses.login.body.data.token}}")
+	if err == nil {
+		t.Fatal("expected error for a JSON path that doesn't exist in the recorded response")
+	}
+}
+
+func TestResetResponses_ClearsRecordedResponses(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	_ = r.LoadDir("../../testdata/environments/valid")
+	_ = r.Use("local")
+
+	r.RecordResponse("login", domain.Exchange{Response: domain.HTTPResponse{StatusCode: 200}})
+	r.ResetResponses()
+
+	_, err := r.Interpolate("{{responses.login.status}}")
+	if err == nil {
+		t.Fatal("expected error after ResetResponses cleared the recorded response")
+	}
 }

@@ -20,6 +20,26 @@ type Config struct {
 	Security  SecurityConfig  `yaml:"security"`
 	Discovery DiscoveryConfig `yaml:"discovery"`
 	Watch     WatchConfig     `yaml:"watch"`
+	// DB is a v9 addition (plan.md v9: "Database assertions (opt-in
+	// plugin)"). Empty by default — no db.* assertion can compile until
+	// a project explicitly configures at least one named connection.
+	DB DBConfig `yaml:"db"`
+}
+
+// DBConfig mirrors docs/03-plugins.md's opt-in-plugin pattern: no
+// connections are configured by default. DSN values should reference an
+// environment variable ("${DATABASE_URL}") rather than embedding a
+// plaintext credential in config.yaml (docs/09-security.md's "never in
+// git" posture — see internal/dbassert.expandDSN for where that gets
+// resolved, lazily, at first use, same timing as environment file
+// variables).
+type DBConfig struct {
+	Connections map[string]DBConnectionConfig `yaml:"connections"`
+}
+
+type DBConnectionConfig struct {
+	Driver string `yaml:"driver"` // "sqlite" or "postgres"
+	DSN    string `yaml:"dsn"`
 }
 
 type ServerConfig struct {
@@ -148,6 +168,9 @@ type rawConfig struct {
 		Tags   map[string]string `yaml:"tags"`
 	} `yaml:"discovery"`
 	Watch WatchConfig `yaml:"watch"`
+	DB    struct {
+		Connections map[string]DBConnectionConfig `yaml:"connections"`
+	} `yaml:"db"`
 }
 
 // Default returns the built-in defaults, per docs/09-security.md section 10
@@ -283,6 +306,10 @@ func Load(path string) (Config, error) {
 	}
 	if len(rc.Watch.IgnoreExtensions) > 0 {
 		cfg.Watch.IgnoreExtensions = rc.Watch.IgnoreExtensions
+	}
+
+	if len(rc.DB.Connections) > 0 {
+		cfg.DB.Connections = rc.DB.Connections
 	}
 
 	return cfg, nil

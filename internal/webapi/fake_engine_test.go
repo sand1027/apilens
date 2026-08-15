@@ -12,24 +12,27 @@ import (
 // real Engine/App/runner stack. Each field is a function the test can set;
 // zero-value fields return sane defaults.
 type fakeEngine struct {
-	initFn         func(ctx context.Context, path string, force bool) (apilens.InitResult, error)
-	discoverFn     func(ctx context.Context, opts apilens.DiscoverOptions) (*apilens.DiscoverResult, error)
-	listFn         func(filter apilens.EndpointFilter) []apilens.Endpoint
-	inspectFn      func(ctx context.Context, ref apilens.InspectRef) (*apilens.Inspection, error)
-	runFn          func(ctx context.Context, filter apilens.RunFilter) (*apilens.Report, error)
-	watchFn        func(ctx context.Context, opts apilens.WatchOptions) (*apilens.WatchSession, error)
-	replayFn       func(ctx context.Context, id int, overrides apilens.ReplayOverrides) (*domain.Exchange, error)
-	generateFn     func(id int, opts apilens.GenerateOptions) (*apilens.GeneratedTest, error)
-	historyFn      func(limit int) []domain.Exchange
-	historyGetFn   func(displayID int) (*domain.Exchange, bool)
-	useEnvFn       func(name string) error
-	environmentsFn func() []domain.Environment
-	currentEnvFn   func() domain.Environment
-	specExportFn   func(opts apilens.SpecExportOptions) (string, error)
-	contractTestFn func(ctx context.Context, opts apilens.ContractTestOptions) (*apilens.Report, error)
-	graphFn        func(opts apilens.GraphOptions) apilens.Graph
-	mockFn         func(ctx context.Context, opts apilens.MockOptions) (*apilens.MockSession, error)
-	pageMapFn      func() []apilens.PageMapping
+	initFn             func(ctx context.Context, path string, force bool) (apilens.InitResult, error)
+	discoverFn         func(ctx context.Context, opts apilens.DiscoverOptions) (*apilens.DiscoverResult, error)
+	listFn             func(filter apilens.EndpointFilter) []apilens.Endpoint
+	inspectFn          func(ctx context.Context, ref apilens.InspectRef) (*apilens.Inspection, error)
+	runFn              func(ctx context.Context, filter apilens.RunFilter) (*apilens.Report, error)
+	watchFn            func(ctx context.Context, opts apilens.WatchOptions) (*apilens.WatchSession, error)
+	replayFn           func(ctx context.Context, id int, overrides apilens.ReplayOverrides) (*domain.Exchange, error)
+	generateFn         func(id int, opts apilens.GenerateOptions) (*apilens.GeneratedTest, error)
+	historyFn          func(limit int) []domain.Exchange
+	historyGetFn       func(displayID int) (*domain.Exchange, bool)
+	useEnvFn           func(name string) error
+	environmentsFn     func() []domain.Environment
+	currentEnvFn       func() domain.Environment
+	specExportFn       func(opts apilens.SpecExportOptions) (string, error)
+	contractTestFn     func(ctx context.Context, opts apilens.ContractTestOptions) (*apilens.Report, error)
+	graphFn            func(opts apilens.GraphOptions) apilens.Graph
+	mockFn             func(ctx context.Context, opts apilens.MockOptions) (*apilens.MockSession, error)
+	pageMapFn          func() []apilens.PageMapping
+	runLoadFn          func(ctx context.Context, filter apilens.RunFilter, opts apilens.LoadOptions) (*apilens.LoadReport, error)
+	recordFn           func(opts apilens.RecordOptions) (apilens.RecordResult, error)
+	generateFromSpecFn func(opts apilens.GenerateFromSpecOptions) (apilens.GenerateFromSpecResult, error)
 }
 
 func (f *fakeEngine) Init(ctx context.Context, path string, force bool) (apilens.InitResult, error) {
@@ -153,9 +156,30 @@ func (f *fakeEngine) Mock(ctx context.Context, opts apilens.MockOptions) (*apile
 	return &apilens.MockSession{}, nil
 }
 
+func (f *fakeEngine) Record(opts apilens.RecordOptions) (apilens.RecordResult, error) {
+	if f.recordFn != nil {
+		return f.recordFn(opts)
+	}
+	return apilens.RecordResult{}, nil
+}
+
+func (f *fakeEngine) GenerateFromSpec(opts apilens.GenerateFromSpecOptions) (apilens.GenerateFromSpecResult, error) {
+	if f.generateFromSpecFn != nil {
+		return f.generateFromSpecFn(opts)
+	}
+	return apilens.GenerateFromSpecResult{}, nil
+}
+
 func (f *fakeEngine) PageMap() []apilens.PageMapping {
 	if f.pageMapFn != nil {
 		return f.pageMapFn()
 	}
 	return nil
+}
+
+func (f *fakeEngine) RunLoad(ctx context.Context, filter apilens.RunFilter, opts apilens.LoadOptions) (*apilens.LoadReport, error) {
+	if f.runLoadFn != nil {
+		return f.runLoadFn(ctx, filter, opts)
+	}
+	return &apilens.LoadReport{}, nil
 }

@@ -4,13 +4,16 @@
 package environment
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/sandeepv/apilens/internal/auth"
 	"github.com/sandeepv/apilens/internal/domain"
@@ -24,7 +27,14 @@ type fileDocument struct {
 }
 
 var (
-	varPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}`)
+	// varPattern's character class includes "-" (in addition to the
+	// original alnum/underscore/dot set) so DSL v2 chaining references
+	// like "{{responses.login.headers.x-request-id}}" can name a header
+	// with a hyphen in it — hyphens are common in real header names
+	// (Content-Type, X-Request-Id) and were never reachable before
+	// chaining introduced a reason to interpolate a header NAME segment
+	// rather than just a flat variable key.
+	varPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z0-9_.\-]+)\s*\}\}`)
 	envPattern = regexp.MustCompile(`\$\{([a-zA-Z0-9_]+)\}`)
 )
 
@@ -35,6 +45,19 @@ type Resolver struct {
 	current domain.EnvName
 	osEnv   func(string) (string, bool)
 	auth    *auth.Registry
+
+	// responsesMu guards responses. Unlike envs (read-only after LoadDir,
+	// safe to share across testrunner's parallel workers untouched),
+	// responses is written during a run — DSL v2 chaining (plan.md v9)
+	// records each ID-tagged test's Exchange here as it completes, so a
+	// LATER test can reference it via "{{responses.<id>...}}". A mutex is
+	// required because a chained test forces sequential execution
+	// (docs/11-risks-and-gaps.md R6), but the store itself must still be
+	// safe if a caller ever reads/writes it from another goroutine (e.g.
+	// the web dashboard running a suite while something else inspects
+	// state).
+	responsesMu sync.RWMutex
+	responses   map[string]domain.Exchange
 }
 
 // New builds an empty Resolver with the default auth schemes registered.
@@ -45,8 +68,33 @@ func New() *Resolver {
 		osEnv: func(key string) (string, bool) {
 			return os.LookupEnv(key)
 		},
-		auth: auth.NewDefaultRegistry(),
+		auth:      auth.NewDefaultRegistry(),
+		responses: make(map[string]domain.Exchange),
 	}
+}
+
+// RecordResponse stores ex under id so a later test's
+// "{{responses.<id>...}}" references can resolve against it (DSL v2
+// chaining, plan.md v9). Overwrites any prior recording for the same id —
+// only the most recent execution of a given test ID is available to
+// chain from.
+func (r *Resolver) RecordResponse(id string, ex domain.Exchange) {
+	if id == "" {
+		return
+	}
+	r.responsesMu.Lock()
+	defer r.responsesMu.Unlock()
+	r.responses[id] = ex
+}
+
+// ResetResponses clears every recorded response. Called at the start of
+// each `apilens run` so a chained suite never sees a stale response left
+// over from a previous invocation of a long-lived Resolver (e.g. the web
+// dashboard, which reuses one Engine/Resolver across many runs).
+func (r *Resolver) ResetResponses() {
+	r.responsesMu.Lock()
+	defer r.responsesMu.Unlock()
+	r.responses = make(map[string]domain.Exchange)
 }
 
 // LoadDir reads every "*.yaml" / "*.yml" file in dir as an environment,
@@ -202,6 +250,14 @@ func (r *Resolver) Interpolate(s string) (string, error) {
 		if name == "base_url" {
 			return env.BaseURL
 		}
+		if strings.HasPrefix(name, "responses.") {
+			val, err := r.lookupResponse(strings.TrimPrefix(name, "responses."))
+			if err != nil {
+				missing = append(missing, name+" ("+err.Error()+")")
+				return match
+			}
+			return val
+		}
 		raw, ok := env.Variables[name]
 		if !ok {
 			missing = append(missing, name)
@@ -219,6 +275,109 @@ func (r *Resolver) Interpolate(s string) (string, error) {
 			fmt.Sprintf("undefined variable(s) in %q: %s", s, strings.Join(missing, ", ")), nil)
 	}
 	return result, nil
+}
+
+// lookupResponse resolves the part of a "responses.<id>.<field...>"
+// reference after the "responses." prefix (DSL v2 chaining, plan.md v9).
+// Supported field paths:
+//
+//	<id>.status                    -> HTTP status code, e.g. "200"
+//	<id>.headers.<name>             -> a response header value (case-insensitive)
+//	<id>.body.<dotted.json.path>    -> a value from the JSON response body
+//	<id>.body                       -> the raw response body as a string
+//
+// An unknown id (test hasn't run yet, doesn't exist, or isn't recorded
+// because it has no "id:") or an unresolvable field path is a runtime
+// error — chaining references can't be validated at Compile time because
+// the referenced test's outcome doesn't exist yet (docs/06-test-dsl.md
+// section 12's compile-vs-assertion-failure split extends naturally here:
+// this is neither, it's a THIRD failure point that can only happen once
+// the suite starts executing, so it surfaces as this test's own status
+// going to "errored", same as any other Interpolate failure).
+func (r *Resolver) lookupResponse(rest string) (string, error) {
+	parts := strings.SplitN(rest, ".", 2)
+	id := parts[0]
+
+	r.responsesMu.RLock()
+	ex, ok := r.responses[id]
+	r.responsesMu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("no recorded response for test id %q (it must run earlier in the same suite and set \"id: %s\")", id, id)
+	}
+	if len(parts) == 1 {
+		return "", fmt.Errorf("responses.%s needs a field, e.g. responses.%s.status / .headers.<name> / .body.<path>", id, id)
+	}
+
+	field := parts[1]
+	switch {
+	case field == "status":
+		return strconv.Itoa(ex.Response.StatusCode), nil
+	case strings.HasPrefix(field, "headers."):
+		name := strings.TrimPrefix(field, "headers.")
+		if ex.Response.Headers == nil {
+			return "", fmt.Errorf("responses.%s has no headers", id)
+		}
+		values, ok := ex.Response.Headers[http.CanonicalHeaderKey(name)]
+		if !ok || len(values) == 0 {
+			return "", fmt.Errorf("responses.%s.headers.%s not present", id, name)
+		}
+		return values[0], nil
+	case field == "body":
+		return string(ex.Response.Body), nil
+	case strings.HasPrefix(field, "body."):
+		path := strings.TrimPrefix(field, "body.")
+		return lookupResponseJSONPath(ex.Response.Body, id, path)
+	default:
+		return "", fmt.Errorf("unrecognized responses.%s.%s (expected status, headers.<name>, or body[.<path>])", id, field)
+	}
+}
+
+// lookupResponseJSONPath resolves a dotted path against a recorded
+// response's JSON body. Intentionally a small, self-contained
+// implementation rather than reusing internal/assertions'
+// lookupJSONPath, since importing internal/assertions from
+// internal/environment would invert the dependency direction
+// docs/02-packages.md establishes (assertions depends on nothing else
+// core; environment must not depend on assertions).
+func lookupResponseJSONPath(body []byte, id, path string) (string, error) {
+	if len(body) == 0 {
+		return "", fmt.Errorf("responses.%s.body is empty", id)
+	}
+	var parsed any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", fmt.Errorf("responses.%s.body is not JSON", id)
+	}
+	cur := parsed
+	for _, seg := range strings.Split(path, ".") {
+		switch node := cur.(type) {
+		case map[string]any:
+			v, ok := node[seg]
+			if !ok {
+				return "", fmt.Errorf("responses.%s.body.%s not found", id, path)
+			}
+			cur = v
+		case []any:
+			idx, err := strconv.Atoi(seg)
+			if err != nil || idx < 0 || idx >= len(node) {
+				return "", fmt.Errorf("responses.%s.body.%s not found", id, path)
+			}
+			cur = node[idx]
+		default:
+			return "", fmt.Errorf("responses.%s.body.%s not found", id, path)
+		}
+	}
+	switch v := cur.(type) {
+	case string:
+		return v, nil
+	case nil:
+		return "", nil
+	default:
+		out, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("responses.%s.body.%s could not be converted to a string", id, path)
+		}
+		return string(out), nil
+	}
 }
 
 // InterpolateRequest expands a RequestTemplate into a concrete HTTPRequest.

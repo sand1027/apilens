@@ -1,0 +1,17 @@
+version: 2
+id: login
+name: Login
+description: DSL v2 chaining fixture — sets up a response for 02-fetch-created.yaml to reference
+tags: [chaining]
+
+request:
+  method: POST
+  url: "{{base_url}}/api/users"
+  body:
+    json:
+      name: chained-user
+      email: chained@example.com
+
+assert:
+  status:
+    equals: 201

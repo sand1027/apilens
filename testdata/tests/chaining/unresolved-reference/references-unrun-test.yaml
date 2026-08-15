@@ -1,0 +1,9 @@
+version: 2
+name: References An ID That Never Ran
+description: Compiles fine (chaining syntax is valid under v2); must ERROR at run time since "never-ran" has no id set anywhere in this suite
+request:
+  method: GET
+  url: "{{base_url}}/api/users/{{responses.never-ran.body.data.id}}"
+assert:
+  status:
+    equals: 200

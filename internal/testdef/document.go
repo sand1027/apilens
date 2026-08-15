@@ -1,5 +1,10 @@
-// Package testdef parses the YAML v1 test DSL (docs/06-test-dsl.md) into
-// domain.TestCase. One YAML document == one test (ADR-016).
+// Package testdef parses the YAML test DSL (docs/06-test-dsl.md) into
+// domain.TestCase. One YAML document == one test (ADR-016). Two DSL
+// versions are supported: version 1 (the original MVP shape) and version
+// 2, which adds response chaining ({{responses.<id>...}} placeholders,
+// plan.md v9) — chaining syntax is a compile error under version 1, per
+// docs/06-test-dsl.md section 11's explicit rule that chaining must be "a
+// later DSL version, not a silent v1 add-on".
 package testdef
 
 // document mirrors the raw YAML shape. yaml.v3 decodes into `any` for the
@@ -13,6 +18,10 @@ type document struct {
 	Tags        []string `yaml:"tags"`
 	Skip        bool     `yaml:"skip"`
 	Retries     *int     `yaml:"retries"`
+	// ID names this test so a later test in the same suite can chain off
+	// its response (DSL v2 / plan.md v9: "Response chaining in DSL v2").
+	// Only meaningful (and only permitted) under version: 2.
+	ID string `yaml:"id"`
 
 	Request requestDoc `yaml:"request"`
 	Assert  assertDoc  `yaml:"assert"`
@@ -50,6 +59,18 @@ type assertDoc struct {
 	Body     *bodyAssertDoc       `yaml:"body"`
 	JSON     map[string]jsonDoc   `yaml:"json"`
 	Duration *durationDoc         `yaml:"duration"`
+	// DB is a v9 addition (plan.md v9: "Database assertions"). Key is
+	// the connection name configured under db.connections in
+	// config.yaml.
+	DB map[string]dbDoc `yaml:"db"`
+}
+
+type dbDoc struct {
+	Query          string `yaml:"query"`
+	Args           []any  `yaml:"args"`
+	RowCountEquals *int   `yaml:"row_count_equals"`
+	Exists         *bool  `yaml:"exists"`
+	Equals         any    `yaml:"equals"`
 }
 
 type statusDoc struct {

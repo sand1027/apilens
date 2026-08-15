@@ -53,7 +53,7 @@ func New(projectDir string) *Service {
 // refusing to overwrite an existing file unless opts.Force
 // (docs/08-proxy.md section 9).
 func (s *Service) FromExchange(ex domain.Exchange, opts Options) (Generated, error) {
-	tc := buildTestCase(ex)
+	tc := BuildTestCase(ex)
 
 	path := opts.Out
 	if path == "" {
@@ -82,11 +82,13 @@ func (s *Service) FromExchange(ex domain.Exchange, opts Options) (Generated, err
 	return Generated{Path: path, Content: content, Test: tc}, nil
 }
 
-// buildTestCase maps an Exchange to a TestCase per docs/06-test-dsl.md
+// BuildTestCase maps an Exchange to a TestCase per docs/06-test-dsl.md
 // section 10 and docs/08-proxy.md section 9: method, URL, safe headers,
 // body (if non-sensitive), and a status.equals assertion on the captured
-// status.
-func buildTestCase(ex domain.Exchange) domain.TestCase {
+// status. Exported so internal/recording (plan.md v9's recording
+// sessions) can reuse the exact same header-dropping / login-payload
+// rules rather than duplicating them with a chance to drift.
+func BuildTestCase(ex domain.Exchange) domain.TestCase {
 	name := fmt.Sprintf("%s %s", ex.Request.Method, requestPath(ex.Request.URL))
 
 	headers := map[string]string{}

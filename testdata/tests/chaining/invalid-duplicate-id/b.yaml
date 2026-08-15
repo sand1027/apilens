@@ -1,0 +1,9 @@
+version: 2
+id: dup
+name: Second Duplicate
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  status:
+    equals: 200

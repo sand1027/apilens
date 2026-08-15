@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -17,6 +18,17 @@ const DefaultTimeout = 10 * time.Second
 
 // DefaultRetries mirrors testing.retries' default (1).
 const DefaultRetries = 1
+
+// MaxSupportedVersion is the highest DSL version this build understands.
+// A file declaring a higher version is a config error rather than being
+// silently mis-parsed under the wrong rules.
+const MaxSupportedVersion = 2
+
+// responsesRefPattern detects a "{{responses...." placeholder anywhere in
+// a string — used to gate chaining syntax to version: 2 documents
+// (docs/06-test-dsl.md section 11) without needing a full DSL v2 grammar
+// just to answer "does this test reference another test's response?".
+var responsesRefPattern = regexp.MustCompile(`\{\{\s*responses\.`)
 
 // Compile parses raw YAML bytes and compiles it into a domain.TestCase.
 // `file` is used only for error messages and TestCase.File.
@@ -43,6 +55,29 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 			fmt.Sprintf("%s: request.body cannot set both \"json\" and \"raw\"", file), nil)
 	}
 
+	// Version dispatch (docs/06-test-dsl.md section 1: "files without it
+	// are treated as v1 during MVP"). A version above what this build
+	// understands is a config error, not a best-effort parse.
+	version := doc.Version
+	if version == 0 {
+		version = 1
+	}
+	if version < 1 || version > MaxSupportedVersion {
+		return domain.TestCase{}, domain.NewConfigError(
+			fmt.Sprintf("%s: unsupported \"version\" %d (this build supports 1-%d)", file, doc.Version, MaxSupportedVersion), nil)
+	}
+
+	usesChaining := documentUsesChaining(doc)
+	if usesChaining && version < 2 {
+		return domain.TestCase{}, domain.NewConfigError(
+			fmt.Sprintf("%s: uses {{responses....}} chaining syntax but is not \"version: 2\" — "+
+				"chaining is a DSL v2 feature (docs/06-test-dsl.md section 11)", file), nil)
+	}
+	if doc.ID != "" && version < 2 {
+		return domain.TestCase{}, domain.NewConfigError(
+			fmt.Sprintf("%s: \"id\" is a DSL v2 field — add \"version: 2\" to use it", file), nil)
+	}
+
 	timeout := DefaultTimeout
 	if doc.Request.Timeout != "" {
 		d, err := time.ParseDuration(doc.Request.Timeout)
@@ -64,11 +99,14 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 	}
 
 	tc := domain.TestCase{
-		Name:        doc.Name,
-		File:        file,
-		Description: doc.Description,
-		Tags:        doc.Tags,
-		Skip:        doc.Skip,
+		Name:         doc.Name,
+		File:         file,
+		Description:  doc.Description,
+		Tags:         doc.Tags,
+		Skip:         doc.Skip,
+		Version:      version,
+		ID:           doc.ID,
+		UsesChaining: usesChaining,
 		Request: domain.RequestTemplate{
 			Method:  domain.NormalizeMethod(doc.Request.Method),
 			URL:     doc.Request.URL,
@@ -97,6 +135,66 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 		}
 	}
 	return tc, nil
+}
+
+// documentUsesChaining reports whether any interpolatable string field in
+// doc contains a "{{responses...." placeholder. Checked across every
+// place environment.Resolver.Interpolate is eventually called for this
+// test: URL, headers, query, body (raw or JSON string leaves), and auth
+// fields — a chaining reference tucked into a header value must be caught
+// just as reliably as one in the URL.
+func documentUsesChaining(doc document) bool {
+	if responsesRefPattern.MatchString(doc.Request.URL) {
+		return true
+	}
+	for _, v := range doc.Request.Headers {
+		if responsesRefPattern.MatchString(v) {
+			return true
+		}
+	}
+	for _, v := range doc.Request.Query {
+		if responsesRefPattern.MatchString(v) {
+			return true
+		}
+	}
+	if responsesRefPattern.MatchString(doc.Request.Body.Raw) {
+		return true
+	}
+	if valueUsesChaining(doc.Request.Body.JSON) {
+		return true
+	}
+	if a := doc.Request.Auth; a != nil {
+		for _, v := range []string{a.Token, a.Username, a.Password, a.Value} {
+			if responsesRefPattern.MatchString(v) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// valueUsesChaining recurses into a decoded JSON body's string leaves,
+// mirroring environment.Resolver.interpolateJSONValue's own traversal
+// shape so detection stays consistent with what will actually be
+// interpolated at run time.
+func valueUsesChaining(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return responsesRefPattern.MatchString(t)
+	case map[string]any:
+		for _, val := range t {
+			if valueUsesChaining(val) {
+				return true
+			}
+		}
+	case []any:
+		for _, val := range t {
+			if valueUsesChaining(val) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
@@ -143,9 +241,25 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 	if a.Duration != nil {
 		spec.Duration = &domain.DurationSpec{LessThan: a.Duration.LessThan}
 	}
+	if len(a.DB) > 0 {
+		spec.DB = make(map[string]domain.DBSpec, len(a.DB))
+		for conn, d := range a.DB {
+			if d.Query == "" {
+				return domain.AssertionSpec{}, domain.NewConfigError(
+					fmt.Sprintf("%s: db.%s requires a \"query\"", file, conn), nil)
+			}
+			spec.DB[conn] = domain.DBSpec{
+				Query:          d.Query,
+				Args:           d.Args,
+				RowCountEquals: d.RowCountEquals,
+				Exists:         d.Exists,
+				Equals:         d.Equals,
+			}
+		}
+	}
 
 	if spec.Status == nil && len(spec.Headers) == 0 && spec.Body == nil &&
-		len(spec.JSON) == 0 && spec.Duration == nil {
+		len(spec.JSON) == 0 && spec.Duration == nil && len(spec.DB) == 0 {
 		return domain.AssertionSpec{}, domain.NewConfigError(
 			fmt.Sprintf("%s: test has no assertions under \"assert\"", file), nil)
 	}
