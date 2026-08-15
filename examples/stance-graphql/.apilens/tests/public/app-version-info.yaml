@@ -1,0 +1,27 @@
+version: 1
+name: App version info (public)
+tags: [graphql, public]
+request:
+  graphql:
+    query: |
+      query AppVersionInfo {
+        appVersionInfo(platform: IOS) {
+          minimumVersion
+          latestVersion
+          updateUrl
+        }
+      }
+    operation: AppVersionInfo
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true
+  json:
+    data.appVersionInfo.minimumVersion:
+      exists: true
+    data.appVersionInfo.latestVersion:
+      exists: true
+    data.appVersionInfo.updateUrl:
+      exists: true

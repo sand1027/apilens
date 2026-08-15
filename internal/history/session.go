@@ -2,13 +2,13 @@ package history
 
 import (
 	"bufio"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -42,8 +42,15 @@ type sessionRecord struct {
 	Error           string              `json:"error,omitempty"`
 }
 
+// maxHistoryLine is an upper bound on one JSONL record. Bodies are already
+// capped by max_response_size (default 5MB); this is a safety net so a
+// huge leftover Chrome download cannot fail the whole session read.
+const maxHistoryLine = 12 * 1024 * 1024
+
 // DefaultPath implements docs/08-proxy.md section 3's documented location:
-// $APILENS_HISTORY_FILE, or /tmp/apilens-history-<project-hash>.jsonl.
+// $APILENS_HISTORY_FILE, or <project>/.apilens/history/session.jsonl.
+// The file is gitignored; watch and history in a second terminal must
+// resolve the same project directory or they will miss each other.
 func DefaultPath(projectDir string) string {
 	if v := os.Getenv("APILENS_HISTORY_FILE"); v != "" {
 		return v
@@ -52,16 +59,73 @@ func DefaultPath(projectDir string) string {
 	if err != nil {
 		abs = projectDir
 	}
-	sum := sha1.Sum([]byte(abs))
-	hash := hex.EncodeToString(sum[:])[:8]
-	return filepath.Join(os.TempDir(), fmt.Sprintf("apilens-history-%s.jsonl", hash))
+	return filepath.Join(abs, ".apilens", "history", "session.jsonl")
 }
 
-// NewSessionFile opens (creating if needed) a session file at path with
-// mode 0600, per docs/09-security.md section 6 ("mode 0600 ... contents
-// already redacted ... do not put it in the repo").
+func pointerFile() string {
+	if v := os.Getenv("APILENS_HISTORY_POINTER"); v != "" {
+		return v
+	}
+	return filepath.Join(os.TempDir(), "apilens-current-history")
+}
+
+// SetActivePath records the session file the running `watch` process is
+// writing. `apilens ui` started from a different repo (Stance frontend vs
+// API) follows this pointer so the overlay and dashboard see the same hits.
+func SetActivePath(sessionPath string) error {
+	if sessionPath == "" {
+		return nil
+	}
+	abs, err := filepath.Abs(sessionPath)
+	if err != nil {
+		abs = sessionPath
+	}
+	path := pointerFile()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(abs+"\n"), 0o600)
+}
+
+// ActivePath is the session file last advertised by watch, or "".
+func ActivePath() string {
+	b, err := os.ReadFile(pointerFile())
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+// SearchPaths is the order HistoryList tries: this project's session
+// file, then the active watch session if it is a different path.
+func SearchPaths(projectDir string) []string {
+	var out []string
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		for _, e := range out {
+			if e == p {
+				return
+			}
+		}
+		out = append(out, p)
+	}
+	add(DefaultPath(projectDir))
+	add(ActivePath())
+	return out
+}
+
+// NewSessionFile creates the session file at path with mode 0600, per
+// docs/09-security.md section 6 ("mode 0600 ... contents already redacted
+// ... do not put it in the repo"). A new watch session truncates any
+// leftover file so display IDs start at #1 without colliding with a
+// previous run's records.
 func NewSessionFile(path string) (*SessionFile, error) {
-	f, err := os.OpenFile(path, os.O_CREATE, 0o600)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, domain.NewConfigError("creating session history directory", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, domain.NewConfigError("creating session history file "+path, err)
 	}
@@ -96,7 +160,8 @@ func (s *SessionFile) Append(ex domain.Exchange) error {
 
 // ReadAll parses every JSONL line in the session file back into
 // exchanges, in append order. A missing file returns (nil, nil) — no
-// session yet is not an error.
+// session yet is not an error. Corrupt or oversized lines are skipped
+// so one Chrome download cannot hide a later GraphQL capture.
 func ReadAll(path string) ([]domain.Exchange, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -108,23 +173,42 @@ func ReadAll(path string) ([]domain.Exchange, error) {
 	defer f.Close()
 
 	var out []domain.Exchange
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 10*1024*1024) // allow larger truncated bodies
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	br := bufio.NewReader(f)
+	for {
+		line, err := readJSONLLine(br, maxHistoryLine)
+		if len(line) > 0 {
+			var rec sessionRecord
+			if json.Unmarshal(line, &rec) == nil {
+				out = append(out, fromRecord(rec))
+			}
 		}
-		var rec sessionRecord
-		if err := json.Unmarshal(line, &rec); err != nil {
-			continue // skip a corrupt line rather than fail the whole read
+		if err == io.EOF {
+			break
 		}
-		out = append(out, fromRecord(rec))
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, domain.NewConfigError("scanning session history file", err)
+		if err != nil {
+			return nil, domain.NewConfigError("scanning session history file", err)
+		}
 	}
 	return out, nil
+}
+
+// readJSONLLine returns one line without the trailing newline. Lines
+// larger than max are discarded (empty slice) rather than unmarshaled.
+func readJSONLLine(r *bufio.Reader, max int) ([]byte, error) {
+	line, err := r.ReadBytes('\n')
+	if len(line) == 0 && err == io.EOF {
+		return nil, io.EOF
+	}
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	if len(line) > 0 && line[len(line)-1] == '\n' {
+		line = line[:len(line)-1]
+	}
+	if len(line) > max {
+		return nil, err
+	}
+	return line, err
 }
 
 func toRecord(ex domain.Exchange) sessionRecord {

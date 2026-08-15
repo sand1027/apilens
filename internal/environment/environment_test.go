@@ -2,6 +2,9 @@ package environment
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -175,6 +178,40 @@ func TestInterpolateRequest_JSONBodyInterpolatesStringLeaves(t *testing.T) {
 	}
 }
 
+func TestInterpolateRequest_GraphQLEncodesJSONBodyAndPosts(t *testing.T) {
+	r := newTestResolver(map[string]string{"AUTH_TOKEN": "x"})
+	if err := r.LoadDir("../../testdata/environments/valid"); err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	_ = r.Use("local")
+
+	req, err := r.InterpolateRequest(domain.RequestTemplate{
+		Method: domain.NormalizeMethod("QUERY"),
+		URL:    "{{base_url}}/graphql",
+		GraphQL: &domain.GraphQLTemplate{
+			Query:         "query Ping { ping { message } }",
+			OperationName: "Ping",
+			Variables:     map[string]any{"id": "{{user_id}}"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("InterpolateRequest: %v", err)
+	}
+	if req.Method != "POST" {
+		t.Errorf("Method = %q, want POST (QUERY is display-only)", req.Method)
+	}
+	if req.Headers.Get("Content-Type") != "application/json" {
+		t.Errorf("Content-Type = %q", req.Headers.Get("Content-Type"))
+	}
+	body := string(req.Body)
+	if !containsStr(body, `"query":"query Ping { ping { message } }"`) {
+		t.Errorf("body missing query: %s", body)
+	}
+	if !containsStr(body, `"id":"1"`) {
+		t.Errorf("variables not interpolated: %s", body)
+	}
+}
+
 func containsStr(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {
@@ -310,5 +347,74 @@ func TestResetResponses_ClearsRecordedResponses(t *testing.T) {
 	_, err := r.Interpolate("{{responses.login.status}}")
 	if err == nil {
 		t.Fatal("expected error after ResetResponses cleared the recorded response")
+	}
+}
+
+func TestLoadDir_MergesSecretsFileOverEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.yaml"), []byte(`
+base_url: http://localhost:3000
+variables:
+  token: "${AUTH_TOKEN}"
+  user_id: "1"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local.secrets.yaml"), []byte(`
+variables:
+  token: "from-secrets-file"
+  extra: "only-in-secrets"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := newTestResolver(map[string]string{})
+	if err := r.LoadDir(dir); err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if _, ok := r.Get("local.secrets"); ok {
+		t.Fatal("local.secrets.yaml must merge into local, not become its own environment")
+	}
+	env, ok := r.Get("local")
+	if !ok {
+		t.Fatal("expected local environment")
+	}
+	if env.Variables["token"] != "from-secrets-file" {
+		t.Errorf("token = %q, want secrets overlay", env.Variables["token"])
+	}
+	if env.Variables["extra"] != "only-in-secrets" {
+		t.Errorf("extra = %q", env.Variables["extra"])
+	}
+	if env.Variables["user_id"] != "1" {
+		t.Errorf("user_id should survive merge, got %q", env.Variables["user_id"])
+	}
+
+	if err := r.Use("local"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Interpolate("{{token}}")
+	if err != nil {
+		t.Fatalf("Interpolate after secrets merge: %v", err)
+	}
+	if got != "from-secrets-file" {
+		t.Errorf("Interpolate token = %q", got)
+	}
+}
+
+func TestInterpolate_MissingAUTH_TOKENIsActionable(t *testing.T) {
+	r := newTestResolver(map[string]string{})
+	if err := r.LoadDir("../../testdata/environments/valid"); err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	if err := r.Use("local"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := r.Interpolate("{{token}}")
+	if err == nil {
+		t.Fatal("expected AUTH_TOKEN error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "AUTH_TOKEN") || !strings.Contains(msg, "secrets.yaml") {
+		t.Errorf("error should mention AUTH_TOKEN and secrets.yaml, got: %s", msg)
 	}
 }

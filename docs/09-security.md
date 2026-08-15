@@ -126,7 +126,7 @@ token: eyJhbGciOi...    # forbidden by policy and by review
 
 `init` templates use `${AUTH_TOKEN}`. Docs and examples use placeholders.
 
-Optional later: `.apilens/environments/staging.secrets.yaml` gitignored, merged at runtime. Not required for MVP if `${ENV}` works.
+`<env>.secrets.yaml` is gitignored and merged at load time after `<env>.yaml`. Example: `.apilens/environments/local.secrets.yaml` overlays `local.yaml`. `apilens env show` still redacts secret-looking keys (token, password, …) even when the value came from the secrets file. A missing `AUTH_TOKEN` at interpolate time names that file in the error.
 
 ## 8. What we do not do
 

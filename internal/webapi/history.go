@@ -19,7 +19,11 @@ func (s *Server) handleHistoryList(w http.ResponseWriter, r *http.Request) {
 		}
 		limit = n
 	}
-	hist := s.engine.History(limit)
+	hist, err := s.engine.History(limit)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	if hist == nil {
 		hist = []domain.Exchange{}
 	}
@@ -34,7 +38,11 @@ func (s *Server) handleHistoryGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	ex, ok := s.engine.HistoryGet(id)
+	ex, ok, err := s.engine.HistoryGet(id)
+	if err != nil {
+		writeError(w, err)
+		return
+	}
 	if !ok {
 		writeError(w, domain.NewNotFoundError("no history entry with that id"))
 		return

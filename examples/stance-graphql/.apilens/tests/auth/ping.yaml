@@ -1,0 +1,31 @@
+version: 1
+name: Ping with bearer token
+description: |
+  Requires AUTH_TOKEN (a Stance JWT). Skipped by default so `apilens run`
+  stays green without credentials. Set skip: false and export AUTH_TOKEN
+  to execute.
+tags: [graphql, auth]
+skip: false
+request:
+  graphql:
+    query: |
+      query Ping {
+        ping {
+          message
+          uptime
+          environment
+        }
+      }
+    operation: Ping
+  auth:
+    type: bearer
+    token: "{{token}}"
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true
+  json:
+    data.ping.message:
+      exists: true

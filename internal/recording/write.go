@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/sandeepv/apilens/internal/domain"
-	"gopkg.in/yaml.v3"
+	"github.com/sandeepv/apilens/internal/generate"
 )
 
 // WriteOptions configures WriteSuite.
@@ -20,7 +20,9 @@ type WriteOptions struct {
 // sorts by file path, so "01-..." must run before "02-..." — same
 // determinism guarantee testdef.Loader.LoadAll already provides, just
 // made explicit for a generated suite instead of relying on the author's
-// own naming).
+// own naming). GraphQL, auth, and header-dropping come from
+// generate.MarshalYAML so `apilens record` cannot drift from
+// `apilens generate`.
 func WriteSuite(steps []Step, opts WriteOptions) ([]string, error) {
 	if opts.Dir == "" {
 		return nil, domain.NewConfigError("recording.WriteSuite requires an output directory", nil)
@@ -39,7 +41,7 @@ func WriteSuite(steps []Step, opts WriteOptions) ([]string, error) {
 					fmt.Sprintf("%s already exists — pass --force to overwrite", path), nil)
 			}
 		}
-		content, err := marshalStep(step)
+		content, err := generate.MarshalYAML(step.Test)
 		if err != nil {
 			return written, err
 		}
@@ -49,60 +51,4 @@ func WriteSuite(steps []Step, opts WriteOptions) ([]string, error) {
 		written = append(written, path)
 	}
 	return written, nil
-}
-
-// yamlDoc mirrors internal/testdef's document shape closely enough to
-// round-trip a DSL v2 TestCase (version + id fields included, unlike
-// internal/generate's own yamlDocument which is v1-only). Kept local for
-// the same reason generate keeps its own: yaml.Marshal needs a
-// decode-shaped struct with omitempty tags, not testdef's parse-oriented
-// types.
-type yamlDoc struct {
-	Version int            `yaml:"version"`
-	ID      string         `yaml:"id,omitempty"`
-	Name    string         `yaml:"name"`
-	Tags    []string       `yaml:"tags,omitempty"`
-	Request yamlRequestDoc `yaml:"request"`
-	Assert  yamlAssertDoc  `yaml:"assert"`
-}
-
-type yamlRequestDoc struct {
-	Method  string            `yaml:"method"`
-	URL     string            `yaml:"url"`
-	Headers map[string]string `yaml:"headers,omitempty"`
-	Body    *yamlBodyDoc      `yaml:"body,omitempty"`
-}
-
-type yamlBodyDoc struct {
-	JSON any `yaml:"json,omitempty"`
-}
-
-type yamlAssertDoc struct {
-	Status yamlStatusDoc `yaml:"status"`
-}
-
-type yamlStatusDoc struct {
-	Equals int `yaml:"equals"`
-}
-
-func marshalStep(step Step) ([]byte, error) {
-	tc := step.Test
-	doc := yamlDoc{
-		Version: tc.Version,
-		ID:      tc.ID,
-		Name:    tc.Name,
-		Tags:    tc.Tags,
-		Request: yamlRequestDoc{
-			Method:  string(tc.Request.Method),
-			URL:     tc.Request.URL,
-			Headers: tc.Request.Headers,
-		},
-	}
-	if tc.Request.Body.JSON != nil {
-		doc.Request.Body = &yamlBodyDoc{JSON: tc.Request.Body.JSON}
-	}
-	if tc.Assert.Status != nil && tc.Assert.Status.Equals != nil {
-		doc.Assert.Status.Equals = *tc.Assert.Status.Equals
-	}
-	return yaml.Marshal(doc)
 }

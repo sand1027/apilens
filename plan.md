@@ -342,6 +342,22 @@ A recorded flow becomes a chained suite. A smoke suite can also run as a bounded
 
 ---
 
+## GraphQL (after v9)
+
+**Goal:** GraphQL APIs are first-class — not "POST /graphql that happens to return 200".
+
+Shipped against HealthFlex Stance (`stance_dashboard` Apollo Server, `stance-dashboard-frontend` queries):
+
+- YAML `request.graphql` (query / variables / operation) compiled to GraphQL-over-HTTP JSON
+- YAML `assert.graphql` (`no_errors`, `has_data`, `error_contains`) so HTTP 200 with `errors[]` fails
+- SDL discovery (`schema.graphql` and `*.graphql` modules) as `QUERY` / `MUTATION` / `SUBSCRIPTION` registry entries
+- Watch + generate map GraphQL POST bodies to `/graphql/query/<field>` instead of collapsing on `POST /graphql`
+- Example: [examples/stance-graphql](examples/stance-graphql)
+
+Does not ship: GraphQL schema contract testing, WebSocket subscriptions, persisted-query GET.
+
+---
+
 ## v10 — Team
 
 **Goal:** Orgs can share suites and run them remotely. The engine is still the v1 engine.

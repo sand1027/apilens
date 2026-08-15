@@ -160,6 +160,9 @@ discovery:
   openapi:
     enabled: true
     paths: []                 # empty = well-known filenames + limited walk
+  graphql:
+    enabled: true
+    paths: []                 # empty = schema.graphql + limited walk
   express:
     enabled: false            # Phase 2
 

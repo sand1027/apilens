@@ -6,6 +6,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -174,11 +175,45 @@ func (p *Proxy) Start(ctx context.Context, opts Options) error {
 // handle dispatches CONNECT (HTTPS tunnel, no MITM) vs. plain HTTP forward
 // proxying.
 func (p *Proxy) handle(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/__apilens__/proxy.pac" {
+		p.handlePAC(w)
+		return
+	}
 	if r.Method == http.MethodConnect {
 		p.handleConnect(w, r)
 		return
 	}
 	p.handleForward(w, r)
+}
+
+// PACScript returns a PAC that sends only loopback traffic through the
+// forward proxy. Chrome still needs --proxy-bypass-list=<-loopback> or it
+// ignores this for localhost (the default bypass list wins over PAC).
+func PACScript(proxyAddr string) string {
+	return fmt.Sprintf(`function FindProxyForURL(url, host) {
+  host = (host || "").toLowerCase();
+  if (shExpMatch(url, "*://127.0.0.1:4488/*") || shExpMatch(url, "*://localhost:4488/*") || shExpMatch(url, "*://[::1]:4488/*")) {
+    return "DIRECT";
+  }
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]" || shExpMatch(host, "127.*")) {
+    return "PROXY %s";
+  }
+  return "DIRECT";
+}
+`, proxyAddr)
+}
+
+// handlePAC is used by `apilens watch --browser`. Chrome ignores HTTP_PROXY
+// for localhost; a PAC that names localhost explicitly plus the loopback
+// bypass override is how we capture GraphQL without changing the app URL.
+func (p *Proxy) handlePAC(w http.ResponseWriter) {
+	proxy := p.addr
+	if proxy == "" {
+		proxy = p.opts.Bind
+	}
+	w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = io.WriteString(w, PACScript(proxy))
 }
 
 // handleConnect tunnels HTTPS traffic byte-for-byte without inspecting it

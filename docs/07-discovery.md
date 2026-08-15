@@ -44,7 +44,7 @@ Endpoint.Sources = ["openapi", "express"]
 Endpoint.PrimarySource = "openapi"    # richer spec wins
 ```
 
-Priority: `openapi` > framework AST > runtime watch.
+Priority: `openapi` / `graphql` (tied) > framework AST > runtime watch.
 
 Watch-discovered routes are "seen" endpoints. They enrich the registry but do not overwrite OpenAPI schemas.
 
@@ -115,24 +115,41 @@ GET /api/profile?x=1   →  GET /api/profile   source=watch
 
 Path params are not inferred at first (`/api/users/1` stays `/api/users/1`). A later normalizer can cluster `/api/users/:id`. Do not guess in MVP — bad clustering is worse than verbose lists.
 
-## 6. Future providers
+## 6. GraphQL provider
 
-Each framework is a new package under `internal/discovery/providers/`:
+SDL discovery via `gqlparser`. Enabled by default (`discovery.graphql.enabled: true`).
 
-| Provider | Approach | Phase |
-| --- | --- | --- |
-| `openapi` | Spec parse | 2 (core in 2; parser can land late Phase 1 if cheap) |
-| `express` | Source scan | 2 |
-| `fastify` | Source / plugin scan | Future |
-| `nestjs` | Decorator scan | Future |
-| `gin` | Go AST | Future |
-| `fiber` | Go AST | Future |
-| `echo` | Go AST | Future |
-| `spring` | Annotation scan | Future |
-| `django` | `urls.py` | Future |
-| `aspnet` | Attribute routes | Future |
+Location strategy:
 
-Do not implement these in MVP. The orchestrator is the investment.
+1. Paths in `discovery.graphql.paths`
+2. Well-known filenames (`schema.graphql`, `schema.gql`, `schema.graphqls`) in the project root and `.apilens/api/`
+3. Limited walk of `*.graphql` / `*.gql` / `*.graphqls` (depth 6, skip `node_modules` / `vendor` / `.git`)
+
+A merged `schema.graphql` wins: module files are not also loaded, so fields do not duplicate.
+
+| SDL | Endpoint |
+| --- | --- |
+| `Query.ping` | `QUERY /graphql/query/ping` |
+| `Mutation.login` | `MUTATION /graphql/mutation/login` |
+| Field arguments | `Spec.Parameters` with `in: graphql` |
+
+`QUERY` / `MUTATION` / `SUBSCRIPTION` are registry display methods. The HTTP runner always POSTs. Introspection fields (`__schema`, `__type`) and placeholder `_empty` are skipped.
+
+`--source graphql` limits discovery to this provider. `--path ./schema.graphql` forces that file.
+
+## 6.1 Other framework providers
+
+| Provider | Approach |
+| --- | --- |
+| `openapi` | Spec parse |
+| `graphql` | SDL parse |
+| `express` | Source scan |
+| `fastify` | Source / plugin scan |
+| `nestjs` | Decorator scan |
+| `gin` | Go AST |
+| `fiber` | Go AST |
+| `echo` | Go AST |
+| `spring` / `django` / `aspnet` | Not shipped |
 
 ## 7. Orchestrator merge algorithm
 
@@ -152,7 +169,7 @@ Replace or Upsert into registry
 optionally persist registry.yaml
 ```
 
-`--source openapi` limits the loop. `--path` bypasses Detect and forces that provider to read the given file.
+`--source openapi` or `--source graphql` limits the loop. `--path` bypasses Detect and forces that provider to read the given file.
 
 ## 8. Registry persistence
 

@@ -104,3 +104,42 @@ assert:
 		t.Fatal("expected error for invalid timeout")
 	}
 }
+
+func TestCompile_GraphQLTest(t *testing.T) {
+	raw := loadFixture(t, "../../testdata/tests/valid/graphql.yaml")
+	tc, err := Compile(raw, "graphql.yaml")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if tc.Request.Method != "POST" {
+		t.Errorf("Method = %q, want POST", tc.Request.Method)
+	}
+	if tc.Request.URL != "{{base_url}}/graphql" {
+		t.Errorf("URL = %q", tc.Request.URL)
+	}
+	if tc.Request.GraphQL == nil || tc.Request.GraphQL.OperationName != "Ping" {
+		t.Fatalf("GraphQL = %+v", tc.Request.GraphQL)
+	}
+	if tc.Assert.GraphQL == nil || tc.Assert.GraphQL.NoErrors == nil || !*tc.Assert.GraphQL.NoErrors {
+		t.Errorf("Assert.GraphQL = %+v", tc.Assert.GraphQL)
+	}
+}
+
+func TestCompile_GraphQLCannotMixBody(t *testing.T) {
+	raw := []byte(`
+name: Bad
+request:
+  graphql:
+    query: "{ ping { message } }"
+  body:
+    json: { "x": 1 }
+assert:
+  graphql:
+    no_errors: true
+`)
+	_, err := Compile(raw, "bad.yaml")
+	if err == nil {
+		t.Fatal("expected error combining graphql and body")
+	}
+}
+

@@ -19,6 +19,9 @@ func TestLoad_MissingFileReturnsDefaults(t *testing.T) {
 	if cfg.Testing.Reporter != "terminal" {
 		t.Errorf("Reporter = %q, want terminal", cfg.Testing.Reporter)
 	}
+	if !cfg.Discovery.GraphQL.Enabled {
+		t.Error("expected discovery.graphql.enabled true by default")
+	}
 }
 
 func TestLoad_OverlaysUserValues(t *testing.T) {

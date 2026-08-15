@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -44,15 +45,34 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 	if doc.Name == "" {
 		return domain.TestCase{}, domain.NewConfigError(fmt.Sprintf("%s: missing required field \"name\"", file), nil)
 	}
-	if doc.Request.Method == "" {
-		return domain.TestCase{}, domain.NewConfigError(fmt.Sprintf("%s: missing required field \"request.method\"", file), nil)
-	}
-	if doc.Request.URL == "" {
-		return domain.TestCase{}, domain.NewConfigError(fmt.Sprintf("%s: missing required field \"request.url\"", file), nil)
-	}
 	if doc.Request.Body.JSON != nil && doc.Request.Body.Raw != "" {
 		return domain.TestCase{}, domain.NewConfigError(
 			fmt.Sprintf("%s: request.body cannot set both \"json\" and \"raw\"", file), nil)
+	}
+	if doc.Request.GraphQL != nil && (doc.Request.Body.JSON != nil || doc.Request.Body.Raw != "") {
+		return domain.TestCase{}, domain.NewConfigError(
+			fmt.Sprintf("%s: request.graphql cannot be combined with request.body", file), nil)
+	}
+	if doc.Request.GraphQL != nil && strings.TrimSpace(doc.Request.GraphQL.Query) == "" {
+		return domain.TestCase{}, domain.NewConfigError(
+			fmt.Sprintf("%s: request.graphql.query is required", file), nil)
+	}
+
+	method := strings.TrimSpace(doc.Request.Method)
+	url := strings.TrimSpace(doc.Request.URL)
+	if doc.Request.GraphQL != nil {
+		if method == "" {
+			method = "POST"
+		}
+		if url == "" {
+			url = "{{base_url}}/graphql"
+		}
+	}
+	if method == "" {
+		return domain.TestCase{}, domain.NewConfigError(fmt.Sprintf("%s: missing required field \"request.method\"", file), nil)
+	}
+	if url == "" {
+		return domain.TestCase{}, domain.NewConfigError(fmt.Sprintf("%s: missing required field \"request.url\"", file), nil)
 	}
 
 	// Version dispatch (docs/06-test-dsl.md section 1: "files without it
@@ -108,8 +128,8 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 		ID:           doc.ID,
 		UsesChaining: usesChaining,
 		Request: domain.RequestTemplate{
-			Method:  domain.NormalizeMethod(doc.Request.Method),
-			URL:     doc.Request.URL,
+			Method:  domain.NormalizeMethod(method),
+			URL:     url,
 			Headers: doc.Request.Headers,
 			Query:   doc.Request.Query,
 			Body: domain.BodyTemplate{
@@ -132,6 +152,13 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 			Header:   doc.Request.Auth.Header,
 			Value:    doc.Request.Auth.Value,
 			Name:     doc.Request.Auth.Name,
+		}
+	}
+	if doc.Request.GraphQL != nil {
+		tc.Request.GraphQL = &domain.GraphQLTemplate{
+			Query:         doc.Request.GraphQL.Query,
+			Variables:     doc.Request.GraphQL.Variables,
+			OperationName: doc.Request.GraphQL.OperationName,
 		}
 	}
 	return tc, nil
@@ -168,6 +195,14 @@ func documentUsesChaining(doc document) bool {
 			if responsesRefPattern.MatchString(v) {
 				return true
 			}
+		}
+	}
+	if g := doc.Request.GraphQL; g != nil {
+		if responsesRefPattern.MatchString(g.Query) || responsesRefPattern.MatchString(g.OperationName) {
+			return true
+		}
+		if valueUsesChaining(g.Variables) {
+			return true
 		}
 	}
 	return false
@@ -241,6 +276,13 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 	if a.Duration != nil {
 		spec.Duration = &domain.DurationSpec{LessThan: a.Duration.LessThan}
 	}
+	if a.GraphQL != nil {
+		spec.GraphQL = &domain.GraphQLAssertSpec{
+			NoErrors:      a.GraphQL.NoErrors,
+			HasData:       a.GraphQL.HasData,
+			ErrorContains: a.GraphQL.ErrorContains,
+		}
+	}
 	if len(a.DB) > 0 {
 		spec.DB = make(map[string]domain.DBSpec, len(a.DB))
 		for conn, d := range a.DB {
@@ -259,7 +301,7 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 	}
 
 	if spec.Status == nil && len(spec.Headers) == 0 && spec.Body == nil &&
-		len(spec.JSON) == 0 && spec.Duration == nil && len(spec.DB) == 0 {
+		len(spec.JSON) == 0 && spec.Duration == nil && spec.GraphQL == nil && len(spec.DB) == 0 {
 		return domain.AssertionSpec{}, domain.NewConfigError(
 			fmt.Sprintf("%s: test has no assertions under \"assert\"", file), nil)
 	}

@@ -54,8 +54,10 @@ type DiscoverResult struct {
 
 // InitResult reports what Engine.Init created vs. left untouched.
 type InitResult struct {
-	Created []string
-	Skipped []string
+	Created  []string
+	Skipped  []string
+	Detected string
+	Notes    []string
 }
 
 // DiscoverOptions configures Engine.Discover (v2).
@@ -133,11 +135,12 @@ type Engine interface {
 	Generate(id int, opts GenerateOptions) (*GeneratedTest, error)
 	// History lists captured exchanges: in-memory if `watch` is running in
 	// this process, otherwise from the session JSONL file
-	// (docs/08-proxy.md section 3).
-	History(limit int) []domain.Exchange
+	// (docs/08-proxy.md section 3). An unreadable session file is an error
+	// rather than an empty list.
+	History(limit int) ([]domain.Exchange, error)
 	// HistoryGet looks up one exchange by its session-scoped display ID
 	// (ADR-013: "#42 is not portable across sessions").
-	HistoryGet(displayID int) (*domain.Exchange, bool)
+	HistoryGet(displayID int) (*domain.Exchange, bool, error)
 	UseEnv(name string) error
 
 	// Environments and CurrentEnv back `apilens env list|show`. Not in the
@@ -367,7 +370,12 @@ func (e *engine) Init(ctx context.Context, path string, force bool) (InitResult,
 	if err != nil {
 		return InitResult{}, err
 	}
-	return InitResult{Created: res.Created, Skipped: res.Skipped}, nil
+	return InitResult{
+		Created:  res.Created,
+		Skipped:  res.Skipped,
+		Detected: res.Detected,
+		Notes:    res.Notes,
+	}, nil
 }
 
 func (e *engine) Discover(ctx context.Context, opts DiscoverOptions) (*DiscoverResult, error) {
@@ -469,16 +477,16 @@ func (e *engine) Generate(id int, opts GenerateOptions) (*GeneratedTest, error) 
 	return &GeneratedTest{Path: result.Path, Content: result.Content, Test: result.Test}, nil
 }
 
-func (e *engine) History(limit int) []domain.Exchange {
+func (e *engine) History(limit int) ([]domain.Exchange, error) {
 	return e.app.HistoryList(limit)
 }
 
-func (e *engine) HistoryGet(displayID int) (*domain.Exchange, bool) {
-	ex, ok := e.app.HistoryGet(displayID)
-	if !ok {
-		return nil, false
+func (e *engine) HistoryGet(displayID int) (*domain.Exchange, bool, error) {
+	ex, ok, err := e.app.HistoryGet(displayID)
+	if err != nil || !ok {
+		return nil, ok, err
 	}
-	return &ex, true
+	return &ex, true, nil
 }
 
 func (e *engine) UseEnv(name string) error {

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -214,6 +215,55 @@ func TestFilter_PathPrefixOnlyCapturesMatching(t *testing.T) {
 	case ex := <-p.Events():
 		t.Fatalf("expected only one captured exchange (the /api one), got a second: %+v", ex)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+func TestPACScriptProxiesLocalhost(t *testing.T) {
+	p, cleanup := startTestProxy(t, Options{Bind: "127.0.0.1:0"})
+	defer cleanup()
+
+	resp, err := http.Get("http://" + p.Addr() + "/__apilens__/proxy.pac")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	s := string(body)
+	if !containsSubstring(s, "PROXY "+p.Addr()) {
+		t.Errorf("PAC missing this proxy: %s", s)
+	}
+	if !containsSubstring(s, `host === "localhost"`) {
+		t.Errorf("PAC should proxy localhost: %s", s)
+	}
+	if !containsSubstring(s, `host === "::1"`) {
+		t.Errorf("PAC should proxy IPv6 loopback: %s", s)
+	}
+	if !containsSubstring(s, `:4488/*`) || !containsSubstring(s, `DIRECT`) {
+		t.Errorf("PAC should skip apilens ui :4488: %s", s)
+	}
+}
+
+func TestFilter_DropsApiLensDashboard(t *testing.T) {
+	p := New(Options{})
+	req := httptest.NewRequest("GET", "http://127.0.0.1:4488/api/history?limit=200", nil)
+	if p.passesFilter(req) {
+		t.Fatal("dashboard polls must not be captured")
+	}
+	gql := httptest.NewRequest("POST", "http://localhost:3000/graphql", nil)
+	if !p.passesFilter(gql) {
+		t.Fatal("GraphQL to :3000 must still be captured")
+	}
+}
+
+func TestBrowserUpdateHostsAreFiltered(t *testing.T) {
+	if !isBrowserUpdateHost("update.googleapis.com") {
+		t.Fatal("expected googleapis to be noise")
+	}
+	if isBrowserUpdateHost("localhost:3000") {
+		t.Fatal("localhost must not be treated as noise")
 	}
 }
 

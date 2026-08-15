@@ -81,7 +81,7 @@ quadrantChart
 
 ### G8 — GraphQL, WebSocket, gRPC
 
-**Default:** Out of scope. HTTP/1.1 REST/JSON only.
+**Default:** GraphQL-over-HTTP is in scope (`request.graphql`, `assert.graphql`, SDL discovery, watch/generate of GraphQL POST bodies). WebSocket subscriptions and gRPC are out of scope. HTTP/1.1 REST/JSON remains the other supported transport.
 
 ### G9 — Multipart / file uploads
 

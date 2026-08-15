@@ -34,7 +34,8 @@ generate`.
 ```bash
 go build -o apilens ./cmd/apilens
 ./apilens init
-# edit .apilens/environments/local.yaml and .apilens/tests/**/*.yaml
+# next: apilens ui  — live hits in the corner widget
+# or:  apilens init --ui
 AUTH_TOKEN=dev ./apilens run
 echo $?          # 0 or 1
 ```
@@ -48,6 +49,16 @@ AUTH_TOKEN=dev go run ../../../cmd/apilens run
 ```
 
 See [examples/fixture-server/README.md](examples/fixture-server/README.md).
+
+GraphQL (HealthFlex Stance Apollo API on `:3000`):
+
+```bash
+go build -o /tmp/apilens ./cmd/apilens
+cd examples/stance-graphql
+/tmp/apilens run --tag public
+```
+
+See [examples/stance-graphql/README.md](examples/stance-graphql/README.md).
 
 ## Intended workflow
 
@@ -99,11 +110,11 @@ discovery:
 ```
 
 `apilens ui` starts a local web dashboard (localhost only) at
-`http://127.0.0.1:4488` with an API Explorer, Request Builder, History,
-Runtime Monitor, Test Runner, and environment switcher — every action
-calls the same Engine methods the CLI does. See
-[web/dashboard/README.md](web/dashboard/README.md) for the frontend build
-workflow.
+`http://127.0.0.1:4488`. A corner widget shows live hits, GraphQL
+operation names, health (success vs `200*`), and p50/p95 timings. Click
+it for the full list. Every action still calls the same Engine methods
+the CLI does. See [web/dashboard/README.md](web/dashboard/README.md) for
+the frontend build workflow.
 
 `--format` accepts `terminal`, `json`, or `junit` on `run`/`test`. CI
 example:

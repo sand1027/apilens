@@ -8,7 +8,10 @@ import (
 )
 
 func newInitCommand(flags *globalFlags) *cobra.Command {
-	var force bool
+	var (
+		force  bool
+		openUI bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -30,9 +33,22 @@ func newInitCommand(flags *globalFlags) *cobra.Command {
 			for _, s := range res.Skipped {
 				fmt.Fprintln(cmd.OutOrStdout(), "skipped (already exists)", s)
 			}
-			return nil
+			if res.Detected != "" {
+				fmt.Fprintln(cmd.OutOrStdout())
+				fmt.Fprintln(cmd.OutOrStdout(), "detected", res.Detected)
+			}
+			for _, n := range res.Notes {
+				fmt.Fprintln(cmd.OutOrStdout(), n)
+			}
+			if !openUI {
+				return nil
+			}
+			fmt.Fprintln(cmd.OutOrStdout())
+			fmt.Fprintln(cmd.OutOrStdout(), "Starting dashboard (live hits widget)...")
+			return runDashboard(cmd, flags, dashboardOpts{openBrowser: true})
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite config.yaml if it already exists")
+	cmd.Flags().BoolVar(&openUI, "ui", false, "Open the local dashboard after init (corner widget for live hits)")
 	return cmd
 }

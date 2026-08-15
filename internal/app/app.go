@@ -55,6 +55,11 @@ func New(opts Options) (*App, error) {
 	if opts.ProjectDir == "" {
 		opts.ProjectDir = "."
 	}
+	abs, err := filepath.Abs(opts.ProjectDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving project directory: %w", err)
+	}
+	opts.ProjectDir = abs
 	if opts.ConfigPath == "" {
 		opts.ConfigPath = filepath.Join(opts.ProjectDir, ".apilens", "config.yaml")
 	}

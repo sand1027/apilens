@@ -39,6 +39,55 @@ func TestInit_CreatesExpectedLayout(t *testing.T) {
 	}
 }
 
+func TestInit_GraphQLRepoWritesGraphQLSmokeAndLocalBaseURL(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "schema.graphql"), []byte("type Query { ping: String }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res, err := Init(dir, false)
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	if res.Detected != "graphql" {
+		t.Errorf("Detected = %q, want graphql", res.Detected)
+	}
+	gqlTest := filepath.Join(dir, ".apilens", "tests", "smoke", "graphql.yaml")
+	if _, err := os.Stat(gqlTest); err != nil {
+		t.Fatalf("expected graphql smoke test: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".apilens", "tests", "smoke", "health.yaml")); err == nil {
+		t.Fatal("REST health.yaml should not be written for a GraphQL repo")
+	}
+	env, err := os.ReadFile(filepath.Join(dir, ".apilens", "environments", "local.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(string(env), "base_url: http://localhost:3000") {
+		t.Errorf("local.yaml = %s", env)
+	}
+	if !contains(string(env), `token: "${AUTH_TOKEN}"`) {
+		t.Errorf("missing AUTH_TOKEN wiring: %s", env)
+	}
+	foundUI := false
+	for _, n := range res.Notes {
+		if contains(n, "apilens ui") {
+			foundUI = true
+		}
+	}
+	if !foundUI {
+		t.Errorf("init notes should point at apilens ui, got %v", res.Notes)
+	}
+	foundOverlay := false
+	for _, n := range res.Notes {
+		if contains(n, "overlay") {
+			foundOverlay = true
+		}
+	}
+	if !foundOverlay {
+		t.Errorf("init notes should mention in-app overlay, got %v", res.Notes)
+	}
+}
+
 func TestInit_SecondRunSkipsExistingFilesWithoutForce(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Init(dir, false); err != nil {

@@ -80,7 +80,41 @@ assert:
 
 `body.json` is serialized as JSON. Raw body uses `body.raw` plus optional `body.content_type`.
 
-Do not allow both `json` and `raw` in the same test.
+Do not allow both `json` and `raw` in the same test. Do not combine `request.graphql` with `request.body`.
+
+### GraphQL
+
+`request.graphql` is the GraphQL-over-HTTP body. Method defaults to `POST` and URL defaults to `{{base_url}}/graphql` when omitted.
+
+```yaml
+version: 1
+name: App version
+tags: [graphql]
+request:
+  graphql:
+    query: |
+      query AppVersionInfo {
+        appVersionInfo(platform: IOS) {
+          minimumVersion
+        }
+      }
+    operation: AppVersionInfo
+    variables:
+      unused: example
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true
+  json:
+    data.appVersionInfo.minimumVersion:
+      exists: true
+```
+
+GraphQL servers usually return HTTP 200 even when the operation failed. `assert.status.equals: 200` is not enough.
+
+The runner always POSTs. `QUERY` / `MUTATION` / `SUBSCRIPTION` in `apilens list` are display methods only.
 
 ## 4. Minimal valid test
 
@@ -111,6 +145,9 @@ This is also what `generate` emits, plus captured headers/body when safe.
 | `json.exists` | `assert.json.<path>.exists` | Path present |
 | `json.equals` | `assert.json.<path>.equals` | Deep equal |
 | `json.contains` | `assert.json.<path>.contains` | String contains / array contains |
+| `graphql.no_errors` | `assert.graphql.no_errors` | GraphQL `errors[]` empty (or present, if `false`) |
+| `graphql.has_data` | `assert.graphql.has_data` | GraphQL `data` is non-null |
+| `graphql.error_contains` | `assert.graphql.error_contains` | Some error message contains the substring |
 
 Header names in YAML are canonicalized to canonical MIME case for lookup.
 
@@ -228,7 +265,7 @@ assert:
     equals: 201
 ```
 
-Dropped by default: `Authorization`, `Cookie`, `Set-Cookie`, and configured sensitive headers. Body dropped if it looks like a login payload (keys `password`, `token`, `secret`, `client_secret`).
+Dropped by default: `Authorization`, `Cookie`, `Set-Cookie`, `Accept-Encoding`, `Content-Length`, hop-by-hop proxy headers, browser `Sec-*` / `User-Agent` / `Origin` / `Referer`, and configured sensitive headers. GraphQL generates `auth: { type: bearer, token: "{{token}}" }` instead of copying the live JWT. Body dropped if it looks like a login payload (keys `password`, `token`, `secret`, `client_secret`).
 
 The author adds auth via the environment, not by pasting a live token into git.
 
@@ -241,8 +278,8 @@ The author adds auth via the environment, not by pasting a live token into git.
 - JSON Schema
 - Regex
 - Array length
-- Database assertions
-- GraphQL operation DSL
+- Database assertions (shipped later as `assert.db`)
+- GraphQL subscriptions over WebSocket
 
 Chaining is the most requested follow-up. Design it as a later DSL version, not a silent v1 add-on.
 

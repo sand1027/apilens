@@ -1,0 +1,49 @@
+directive @validate(max: Int, min: Int) on INPUT_FIELD_DEFINITION
+
+type Ping {
+  uptime: Float!
+  timestamp: Int!
+  message: String!
+  environment: String!
+}
+
+input PongInput {
+  message: String!
+}
+
+enum AppPlatform {
+  IOS
+  ANDROID
+}
+
+type AppVersionInfo {
+  minimumVersion: String!
+  latestVersion: String!
+  updateUrl: String!
+}
+
+type Center {
+  _id: ID!
+  name: String!
+  isOnline: Boolean
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+type AuthenticatedSession {
+  token: String!
+}
+
+type Query {
+  ping: Ping!
+  appVersionInfo(platform: AppPlatform!): AppVersionInfo!
+  centers: [Center!]!
+}
+
+type Mutation {
+  pong(input: PongInput!): Ping!
+  login(input: LoginInput!): AuthenticatedSession!
+}

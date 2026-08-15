@@ -20,7 +20,7 @@ type GraphOptions struct {
 // internal/graph's package doc for the honesty note this mirrors
 // docs/11-risks-and-gaps.md G19 for page-to-API mapping).
 func (a *App) Graph(opts GraphOptions) graph.Graph {
-	exchanges := a.HistoryList(0)
+	exchanges := a.historyOrEmpty()
 	window := graph.DefaultWindow
 	if opts.WindowMS > 0 {
 		window = time.Duration(opts.WindowMS) * time.Millisecond

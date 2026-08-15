@@ -33,7 +33,10 @@ type RecordResult struct {
 // sequence into a suite that replays the sequence with real
 // data-flow between steps (plan.md v9).
 func (a *App) Record(opts RecordOptions) (RecordResult, error) {
-	exchanges := a.HistoryList(opts.Limit)
+	exchanges, err := a.HistoryList(opts.Limit)
+	if err != nil {
+		return RecordResult{}, err
+	}
 
 	steps, err := recording.Session(exchanges)
 	if err != nil {

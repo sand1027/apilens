@@ -1,0 +1,22 @@
+version: 1
+name: GraphQL ping
+tags: [graphql]
+request:
+  graphql:
+    query: |
+      query Ping {
+        ping {
+          message
+          uptime
+        }
+      }
+    operation: Ping
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true
+  json:
+    data.ping.message:
+      exists: true

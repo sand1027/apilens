@@ -21,9 +21,11 @@ apilens/
 │   ├── discovery/                  # orchestrator + Provider port
 │   │   └── providers/
 │   │       ├── openapi/
-│   │       └── express/            # Phase 2
+│   │       ├── graphql/
+│   │       └── express/
 │   ├── runner/                     # HTTP execution
 │   ├── testdef/                    # YAML DSL parse + compile
+│   ├── graphqlop/                  # GraphQL-over-HTTP parse/encode
 │   ├── assertions/                 # evaluators + host
 │   ├── testrunner/                 # suite orchestration
 │   ├── environment/                # env files + interpolation
@@ -114,6 +116,8 @@ Hard rules:
 | `registry` | Store / query endpoints | How endpoints were found |
 | `discovery` | Provider port + merge/dedupe | Framework-specific parsing |
 | `providers/openapi` | OpenAPI 3 / Swagger 2 | Express, registry persistence |
+| `providers/graphql` | GraphQL SDL | OpenAPI, executing operations |
+| `graphqlop` | Parse/encode GraphQL-over-HTTP | HTTP I/O, YAML |
 | `providers/express` | Express route extraction | OpenAPI |
 | `runner` | One HTTP exchange | Assertions, YAML |
 | `testdef` | Parse and compile YAML | Execution |
@@ -173,7 +177,7 @@ Later, optional and gitignored:
 .apilens/environments/*.secrets.yaml
 ```
 
-`init` writes a `.gitignore` snippet for those paths. It does not create a git repo.
+`init` writes a `.gitignore` snippet for those paths. It does not create a git repo. `<env>.secrets.yaml` is merged over `<env>.yaml` at load time; `apilens env show` still redacts secret keys.
 
 ## 6. Test layout in this repo
 

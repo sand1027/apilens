@@ -165,3 +165,43 @@ func TestCompile_EmptySpecReturnsError(t *testing.T) {
 		t.Fatal("expected error compiling an empty AssertionSpec")
 	}
 }
+
+func TestGraphQLNoErrorsAndHasData(t *testing.T) {
+	ex := exchangeWithJSON(200, `{"data":{"ping":{"message":"ok"}},"errors":null}`)
+	noErr := true
+	hasData := true
+	set := mustCompile(t, domain.AssertionSpec{GraphQL: &domain.GraphQLAssertSpec{NoErrors: &noErr, HasData: &hasData}})
+	results := New().Eval(set, ex)
+	for _, r := range results {
+		if !r.Passed {
+			t.Errorf("expected pass: %+v", r)
+		}
+	}
+}
+
+func TestGraphQLNoErrorsFailsOnErrorsArray(t *testing.T) {
+	ex := exchangeWithJSON(200, `{"data":null,"errors":[{"message":"Not Authorised!"}]}`)
+	noErr := true
+	set := mustCompile(t, domain.AssertionSpec{GraphQL: &domain.GraphQLAssertSpec{NoErrors: &noErr}})
+	results := New().Eval(set, ex)
+	if results[0].Passed {
+		t.Fatal("HTTP 200 with GraphQL errors must fail graphql.no_errors")
+	}
+}
+
+func TestGraphQLErrorContains(t *testing.T) {
+	ex := exchangeWithJSON(200, `{"errors":[{"message":"Not Authorised!"}]}`)
+	want := "Authorised"
+	wantErrors := false
+	set := mustCompile(t, domain.AssertionSpec{GraphQL: &domain.GraphQLAssertSpec{
+		NoErrors:      &wantErrors,
+		ErrorContains: &want,
+	}})
+	results := New().Eval(set, ex)
+	for _, r := range results {
+		if !r.Passed {
+			t.Errorf("expected pass: %+v", r)
+		}
+	}
+}
+

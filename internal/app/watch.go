@@ -3,10 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
+	"os"
+	"strconv"
 
 	"github.com/sandeepv/apilens/internal/config"
 	"github.com/sandeepv/apilens/internal/domain"
+	"github.com/sandeepv/apilens/internal/graphqlop"
 	"github.com/sandeepv/apilens/internal/history"
 	"github.com/sandeepv/apilens/internal/proxy"
 	"github.com/sandeepv/apilens/internal/registry"
@@ -77,6 +81,9 @@ func (a *App) Watch(ctx context.Context, opts WatchOptions) (*WatchHandle, error
 	if err != nil {
 		return nil, err
 	}
+	if err := history.SetActivePath(sessionPath); err != nil {
+		fmt.Fprintf(os.Stderr, "apilens: could not publish history pointer: %v\n", err)
+	}
 
 	// Bind synchronously so a bad bind policy or a port already in use
 	// fails the CLI command immediately rather than after printing a
@@ -112,7 +119,9 @@ func (a *App) pumpWatchEvents(p *proxy.Proxy, sessionFile *history.SessionFile, 
 	defer a.persistRegistrySnapshot()
 	for ex := range p.Events() {
 		stored := a.History.Append(ex)
-		_ = sessionFile.Append(stored)
+		if err := sessionFile.Append(stored); err != nil {
+			fmt.Fprintf(os.Stderr, "apilens: could not write history: %v\n", err)
+		}
 		a.upsertObservedEndpoint(stored)
 		out <- stored
 	}
@@ -123,7 +132,9 @@ func (a *App) persistRegistrySnapshot() {
 	if len(endpoints) == 0 {
 		return
 	}
-	_ = registry.SaveYAML(registryPath(a.ProjectDir), endpoints)
+	if err := registry.SaveYAML(registryPath(a.ProjectDir), endpoints); err != nil {
+		fmt.Fprintf(os.Stderr, "apilens: could not persist registry: %v\n", err)
+	}
 }
 
 // upsertObservedEndpoint implements docs/07-discovery.md section 5:
@@ -136,12 +147,20 @@ func (a *App) upsertObservedEndpoint(ex domain.Exchange) {
 	if ex.Request.URL == "" {
 		return
 	}
+	method := ex.Request.Method
 	path := requestPath(ex.Request.URL)
+	var tags []string
+	if _, op, ok := graphqlop.ParseHTTPBody(ex.Request.Body); ok {
+		method = graphqlop.DisplayMethod(op.Type)
+		path = graphqlop.RegistryPath(op.Type, op.PrimaryField())
+		tags = []string{"graphql", op.Type}
+	}
 	_ = a.Registry.Upsert(domain.Endpoint{
-		Method:        ex.Request.Method,
+		Method:        method,
 		Path:          path,
 		Sources:       []string{"watch"},
 		PrimarySource: "watch",
+		Tags:          tags,
 	})
 }
 
@@ -149,31 +168,61 @@ func (a *App) upsertObservedEndpoint(ex domain.Exchange) {
 // (populated only while `watch` is running in this process); if empty, it
 // falls back to the session JSONL file so a second terminal can see what
 // the first terminal's `watch` captured (docs/08-proxy.md section 3).
-func (a *App) HistoryList(limit int) []domain.Exchange {
+// A missing file is not an error; an unreadable file is.
+func (a *App) HistoryList(limit int) ([]domain.Exchange, error) {
 	inMem := a.History.List(limit)
 	if len(inMem) > 0 {
-		return inMem
+		return inMem, nil
 	}
-	fromFile, _ := history.ReadAll(history.DefaultPath(a.ProjectDir))
+	var fromFile []domain.Exchange
+	for _, path := range history.SearchPaths(a.ProjectDir) {
+		got, err := history.ReadAll(path)
+		if err != nil {
+			return nil, err
+		}
+		if len(got) > 0 {
+			fromFile = got
+			break
+		}
+	}
 	if limit > 0 && len(fromFile) > limit {
 		fromFile = fromFile[len(fromFile)-limit:]
 	}
-	return fromFile
+	return fromFile, nil
+}
+
+func (a *App) historyOrEmpty() []domain.Exchange {
+	list, err := a.HistoryList(0)
+	if err != nil {
+		return nil
+	}
+	return list
 }
 
 // HistoryGet backs `apilens history show <id>`, with the same in-memory
 // then session-file fallback as HistoryList.
-func (a *App) HistoryGet(displayID int) (domain.Exchange, bool) {
+func (a *App) HistoryGet(displayID int) (domain.Exchange, bool, error) {
 	if ex, ok := a.History.Get(displayID); ok {
-		return ex, true
+		return ex, true, nil
 	}
-	fromFile, _ := history.ReadAll(history.DefaultPath(a.ProjectDir))
-	for _, ex := range fromFile {
-		if int(ex.Display) == displayID {
-			return ex, true
+	var found domain.Exchange
+	ok := false
+	for _, path := range history.SearchPaths(a.ProjectDir) {
+		fromFile, err := history.ReadAll(path)
+		if err != nil {
+			return domain.Exchange{}, false, err
+		}
+		for _, item := range fromFile {
+			if int(item.Display) == displayID {
+				found = item
+				ok = true
+			}
+		}
+		if ok {
+			break
 		}
 	}
-	return domain.Exchange{}, false
+	return found, ok, nil
 }
 
 func requestPath(rawURL string) string {
@@ -188,6 +237,14 @@ func requestPath(rawURL string) string {
 }
 
 func resolveBind(cfg config.WatchConfig, opts WatchOptions) string {
+	// A full host:port in Bind (including ":0" for an OS-assigned port)
+	// wins so tests can request an ephemeral port without colliding on
+	// the product default 8888.
+	if opts.Bind != "" {
+		if _, _, err := net.SplitHostPort(opts.Bind); err == nil {
+			return opts.Bind
+		}
+	}
 	bind := cfg.Bind
 	port := cfg.Port
 	if opts.Bind != "" {
@@ -202,7 +259,7 @@ func resolveBind(cfg config.WatchConfig, opts WatchOptions) string {
 	if port == 0 {
 		port = 8888
 	}
-	return fmt.Sprintf("%s:%d", bind, port)
+	return net.JoinHostPort(bind, strconv.Itoa(port))
 }
 
 func firstNonEmpty(a, b string) string {
