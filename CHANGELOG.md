@@ -85,13 +85,31 @@ watch`/`history` per [docs/08-proxy.md](docs/08-proxy.md):
   capture channel had two consumers racing on it; now a single internal
   pump assigns display IDs and republishes to the CLI on its own channel
 
-## v4 — Replay
+## v4 — Replay (2026-08-15)
 
-Not shipped. `replay`, `generate`, path-matched `test`.
+Shipped. `replay`, `generate`, path-matched `test` per
+[docs/08-proxy.md](docs/08-proxy.md) sections 8-9:
 
-## v4 — Replay
-
-Not shipped. `replay`, `generate`, path-matched `test`.
+- `internal/replay` — reconstructs a stored exchange's request and
+  applies overrides (method, URL, header set/unset, query, body) before
+  executing it through the same shared runner every other live call uses
+- Replay always creates a **new** history entry; it never overwrites the
+  one it replayed
+- Refuses to replay a still-masked `Bearer ********`/`Basic ********`
+  header — fails with a clear error instead of silently sending the
+  literal asterisks; `--header` or environment auth unblocks it
+- `internal/generate` — maps a captured exchange to a YAML v1 test:
+  method, URL, safe headers, JSON body (dropped if it looks like a login
+  payload), and a `status.equals` assertion on the captured status
+- Generated tests never carry `Authorization`/`Cookie`/`Set-Cookie` or a
+  sensitive-looking body — verified end-to-end that no captured secret
+  ever reaches the generated YAML file
+- Default output path `.apilens/tests/generated/<method>-<slug-path>.yaml`,
+  refuses to overwrite without `--force`
+- `apilens replay <id> [--method] [--url] [--header] [--unset] [--query]`
+- `apilens generate <id> [--out] [--force]`
+- Verified the full differentiator loop end-to-end with a real binary:
+  `watch` → capture → `generate` → `run` → passing test
 
 ## v5 — CI
 

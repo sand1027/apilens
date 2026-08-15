@@ -9,8 +9,10 @@ import (
 
 	"github.com/sandeepv/apilens/internal/app"
 	"github.com/sandeepv/apilens/internal/domain"
+	"github.com/sandeepv/apilens/internal/generate"
 	"github.com/sandeepv/apilens/internal/project"
 	"github.com/sandeepv/apilens/internal/registry"
+	"github.com/sandeepv/apilens/internal/replay"
 	"github.com/sandeepv/apilens/internal/reporter"
 )
 
@@ -290,11 +292,26 @@ func (e *engine) Watch(ctx context.Context, opts WatchOptions) (*WatchSession, e
 }
 
 func (e *engine) Replay(ctx context.Context, id int, overrides ReplayOverrides) (*domain.Exchange, error) {
-	return nil, domain.ErrNotImplemented
+	ex, err := e.app.Replay(ctx, id, replay.Overrides{
+		Method:  overrides.Method,
+		URL:     overrides.URL,
+		Headers: overrides.Headers,
+		Unset:   overrides.Unset,
+		Query:   overrides.Query,
+		Body:    overrides.Body,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &ex, nil
 }
 
 func (e *engine) Generate(id int, opts GenerateOptions) (*GeneratedTest, error) {
-	return nil, domain.ErrNotImplemented
+	result, err := e.app.Generate(id, generate.Options{Out: opts.Out, Force: opts.Force})
+	if err != nil {
+		return nil, err
+	}
+	return &GeneratedTest{Path: result.Path, Content: result.Content, Test: result.Test}, nil
 }
 
 func (e *engine) History(limit int) []domain.Exchange {

@@ -56,6 +56,8 @@ func NewRootCommand() *cobra.Command {
 		newInspectCommand(flags),
 		newWatchCommand(flags),
 		newHistoryCommand(flags),
+		newReplayCommand(flags),
+		newGenerateCommand(flags),
 	)
 
 	return root
