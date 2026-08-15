@@ -1,0 +1,21 @@
+---
+title: Single-process runtime shape
+---
+flowchart LR
+    subgraph Process["Single apilens process"]
+        MAIN[cmd/apilens]
+        ENG[Engine]
+        PLUG[Built-in plugins]
+        MEM[In-memory history]
+    end
+
+    MAIN --> ENG
+    ENG --> PLUG
+    ENG --> MEM
+
+    SPEC[OpenAPI / source tree] --> ENG
+    ENVFILE[".apilens/environments"] --> ENG
+    TESTS[".apilens/tests/*.yaml"] --> ENG
+    ENG --> TERM[Terminal]
+    ENG --> JSON[JSON report]
+    BROWSER[Browser via proxy] --> ENG

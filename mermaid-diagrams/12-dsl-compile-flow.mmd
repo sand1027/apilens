@@ -1,0 +1,14 @@
+---
+title: Test DSL compile then execute
+---
+flowchart TD
+    Load[Load YAML] --> Parse[Parse document]
+    Parse --> BadYAML[ErrConfig exit 2]
+    Parse --> Compile[Compile assertions]
+    Compile --> BadAssert[ErrConfig exit 2]
+    Compile --> Interp[Interpolate variables]
+    Interp --> BadVar[ErrConfig exit 2]
+    Interp --> Exec[HTTP execute]
+    Exec --> Eval[Evaluate assertions]
+    Eval --> Pass[Pass]
+    Eval --> Fail[Fail exit 1]

@@ -1,0 +1,15 @@
+---
+title: ApiLens product workflow
+---
+flowchart TD
+    App[Application or spec] --> Discover[API Discovery]
+    Discover --> Registry[API Registry]
+    Registry --> Watch[Runtime Monitoring]
+    Watch --> Capture[Request / Response Capture]
+    Capture --> Inspect[API Inspection]
+    Inspect --> Replay[Request Replay]
+    Replay --> Generate[Test Generation]
+    Generate --> Tests[YAML Test Suite]
+    Tests --> Runner[Test Runner]
+    Runner --> Reports[Terminal / JSON Reports]
+    Reports --> CI[CI / CD]

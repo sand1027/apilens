@@ -1,0 +1,15 @@
+---
+title: Request replay flow
+---
+sequenceDiagram
+    participant CLI
+    participant Hist as History
+    participant Rep as Replay
+    participant Run as Runner
+
+    CLI->>Hist: Get(42)
+    Hist-->>CLI: Exchange
+    CLI->>Rep: Apply overrides
+    Rep->>Run: Do(request)
+    Run-->>CLI: New exchange
+    CLI->>Hist: Append as new ID

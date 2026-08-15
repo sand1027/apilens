@@ -1,0 +1,11 @@
+name: Both Body Forms
+request:
+  method: POST
+  url: "{{base_url}}/api/users"
+  body:
+    json:
+      name: test
+    raw: "raw text"
+assert:
+  status:
+    equals: 201

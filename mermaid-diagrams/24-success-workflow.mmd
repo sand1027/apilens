@@ -1,0 +1,14 @@
+---
+title: MVP success workflow
+---
+flowchart TD
+    Init["apilens init"] --> Discover["apilens discover"]
+    Discover --> List["See APIs in the project"]
+    List --> Test["apilens test /api/users"]
+    Test --> Watch["apilens watch"]
+    Watch --> Open[Open the application]
+    Open --> Seen["See GET /api/users, GET /api/profile"]
+    Seen --> Gen["apilens generate request-id"]
+    Gen --> YAML[Reusable YAML test]
+    YAML --> Run["apilens run"]
+    Run --> Suite[Full suite from the terminal]

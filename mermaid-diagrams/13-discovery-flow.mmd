@@ -1,0 +1,14 @@
+---
+title: API discovery flow
+---
+flowchart TD
+    CLI[apilens discover] --> UC[app.Discover]
+    UC --> Orch[discovery.Orchestrator]
+    Orch --> Cfg[Enabled providers from config]
+    Cfg --> Det[Provider.Detect]
+    Det --> Skip[Skip if false or disabled]
+    Det --> Run[Provider.Discover]
+    Run --> Merge[Normalize + dedupe]
+    Merge --> Reg[registry.Store]
+    Reg --> Out[CLI table / JSON]
+    Reg --> Disk[".apilens/api/registry.yaml"]

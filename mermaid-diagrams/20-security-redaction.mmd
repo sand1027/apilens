@@ -1,0 +1,13 @@
+---
+title: Security redaction pipeline
+---
+flowchart TD
+    Raw[Raw exchange] --> Policy{capture_sensitive_headers?}
+    Policy -->|false default| Store[Store redacted copy]
+    Policy -->|true explicit| StoreRaw[Store raw in memory only]
+    Store --> Disp[Display mask]
+    StoreRaw --> Disp
+    Disp --> Term[Terminal]
+    Disp --> JSONRep[JSON reporter]
+    Store --> Gen[Test generate]
+    Gen --> Drop[Drop secret headers and login bodies]

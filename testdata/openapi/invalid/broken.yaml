@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: Broken Spec
+  version: "1.0"
+paths:
+  /api/things:
+    get:
+      responses:
+        200:
+          description: [this, should, be, a, string, not, a, list]

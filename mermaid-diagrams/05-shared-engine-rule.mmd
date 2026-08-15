@@ -1,0 +1,15 @@
+---
+title: Shared engine rule
+---
+flowchart LR
+    subgraph Allowed["Allowed"]
+        CLI2[CLI] --> E[Engine]
+        UI2[Web UI] --> E
+        CI2[CI] --> E
+    end
+
+    subgraph Forbidden["Forbidden"]
+        UI3[Web UI own HTTP client]
+        UI4[Web UI own assertions]
+        CLI3[CLI inline test logic]
+    end

@@ -1,0 +1,15 @@
+---
+title: Phase 1 implementation order
+---
+flowchart TD
+    PR1[PR1: module cobra init version] --> PR2[PR2: config + project layout]
+    PR2 --> PR3[PR3: domain types + security]
+    PR3 --> PR4[PR4: environment interpolation]
+    PR4 --> PR5[PR5: HTTP runner]
+    PR5 --> PR6[PR6: testdef parser]
+    PR6 --> PR7[PR7: assertions]
+    PR7 --> PR8[PR8: testrunner sequential]
+    PR8 --> PR9[PR9: terminal + json reporters]
+    PR9 --> PR10[PR10: run test env CLI]
+    PR10 --> PR11[PR11: parallel retries fail-fast]
+    PR11 --> PR12[PR12: testdata fixture server]

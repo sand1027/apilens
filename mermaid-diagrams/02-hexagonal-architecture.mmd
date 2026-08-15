@@ -1,0 +1,51 @@
+---
+title: Hexagonal architecture — ports and adapters
+---
+flowchart TB
+    subgraph Surfaces["Surfaces — adapters"]
+        CLI[CLI — cobra]
+        UI[Web UI — later]
+        CICMD[CI — same CLI]
+    end
+
+    subgraph Public["Public facade"]
+        PKG["pkg/apilens.Engine"]
+    end
+
+    subgraph AppLayer["Application — use cases"]
+        UC["discover / list / inspect / run / watch / replay / generate"]
+    end
+
+    subgraph Core["Domain core"]
+        REG[Registry]
+        RUN[HTTP Runner]
+        ASSERT[Assertions]
+        TDEF[Test definitions]
+        ENV[Environment + variables]
+        HIST[History]
+        SEC[Security / redaction]
+    end
+
+    subgraph Ports["Plugin ports"]
+        DP[Discovery providers]
+        RP[Reporters]
+        AP[Assertion evaluators]
+        AUTH[Auth schemes]
+    end
+
+    subgraph Infra["Infrastructure"]
+        HTTP[net/http client]
+        FS[Filesystem]
+        YAML[YAML parser]
+        PROXY[Local proxy]
+        OAPI[OpenAPI parser]
+    end
+
+    CLI --> PKG
+    UI --> PKG
+    CICMD --> PKG
+    PKG --> UC
+    UC --> Core
+    UC --> Ports
+    Ports --> Infra
+    Core --> Infra

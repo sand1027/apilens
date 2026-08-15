@@ -1,0 +1,17 @@
+version: 1
+name: Get User
+description: Fetch a single user by id
+tags: [users]
+
+request:
+  method: GET
+  url: "{{base_url}}/api/users/1"
+
+assert:
+  status:
+    equals: 200
+  json:
+    data.id:
+      equals: 1
+    data.email:
+      contains: "@"

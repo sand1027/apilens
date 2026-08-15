@@ -1,0 +1,7 @@
+name: Health
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  status:
+    equals: 200

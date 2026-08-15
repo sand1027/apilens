@@ -1,0 +1,40 @@
+---
+title: CLI commands map to Engine methods
+---
+flowchart LR
+    subgraph CLI["CLI"]
+        C1[init]
+        C2[discover]
+        C3[list]
+        C4[inspect]
+        C5[test / run]
+        C6[watch]
+        C7[replay]
+        C8[generate]
+        C9[env use]
+        C10[history]
+    end
+
+    subgraph Engine["pkg/apilens.Engine"]
+        E1[Init]
+        E2[Discover]
+        E3[List]
+        E4[Inspect]
+        E5[Run]
+        E6[Watch]
+        E7[Replay]
+        E8[Generate]
+        E9[UseEnv]
+        E10[History]
+    end
+
+    C1 --> E1
+    C2 --> E2
+    C3 --> E3
+    C4 --> E4
+    C5 --> E5
+    C6 --> E6
+    C7 --> E7
+    C8 --> E8
+    C9 --> E9
+    C10 --> E10

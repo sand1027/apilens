@@ -1,0 +1,24 @@
+---
+title: Plugin ports and built-ins
+---
+flowchart LR
+    Host[Plugin Host] --> D[Discovery Provider]
+    Host --> R[Reporter]
+    Host --> A[Assertion Evaluator]
+    Host --> U[Auth Scheme]
+
+    D --> D1[openapi]
+    D --> D2[express]
+    D --> D3[gin — future]
+    R --> R1[terminal]
+    R --> R2[json]
+    R --> R3[junit — later]
+    A --> A1[status]
+    A --> A2[header]
+    A --> A3[body]
+    A --> A4[jsonpath]
+    A --> A5[duration]
+    U --> U1[bearer]
+    U --> U2[basic]
+    U --> U3[apikey]
+    U --> U4[cookie]

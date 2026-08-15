@@ -1,0 +1,4 @@
+name: No Assertions
+request:
+  method: GET
+  url: "{{base_url}}/health"

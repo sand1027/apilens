@@ -1,0 +1,6 @@
+# Environment for the fixture-server example.
+# Start the fixture server first: go run ./examples/fixture-server -addr :5050
+# (port 5000 collides with macOS AirPlay Receiver on many systems)
+base_url: http://localhost:5050
+variables:
+  token: "${AUTH_TOKEN}"

@@ -1,0 +1,45 @@
+---
+title: Go package dependency direction
+---
+flowchart TB
+    CMD["cmd/apilens"] --> CLI["internal/cli"]
+    CMD --> PLUG["internal/plugins"]
+    CLI --> PKG["pkg/apilens"]
+    PKG --> APP["internal/app"]
+    PLUG --> DISC["internal/discovery"]
+    PLUG --> REP["internal/reporter"]
+    PLUG --> ASS["internal/assertions"]
+    PLUG --> AUTH["internal/auth"]
+
+    APP --> DOM["internal/domain"]
+    APP --> REG["internal/registry"]
+    APP --> DISC
+    APP --> RUN["internal/runner"]
+    APP --> TD["internal/testdef"]
+    APP --> TR["internal/testrunner"]
+    APP --> ENV["internal/environment"]
+    APP --> SEC["internal/security"]
+    APP --> HIST["internal/history"]
+    APP --> PROXY["internal/proxy"]
+    APP --> REPLAY["internal/replay"]
+    APP --> GEN["internal/generate"]
+    APP --> REP
+    APP --> CFG["internal/config"]
+
+    DISC --> DOM
+    RUN --> DOM
+    RUN --> SEC
+    TD --> DOM
+    TR --> RUN
+    TR --> ASS
+    TR --> DOM
+    ENV --> DOM
+    HIST --> DOM
+    HIST --> SEC
+    PROXY --> HIST
+    PROXY --> SEC
+    REPLAY --> RUN
+    GEN --> TD
+    REP --> DOM
+    REG --> DOM
+    CFG --> DOM

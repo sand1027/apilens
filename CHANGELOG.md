@@ -1,0 +1,118 @@
+# Changelog
+
+All notable product releases will be listed here.
+
+Format: version, date, summary. Details live in [plan.md](plan.md).
+
+## Unreleased
+
+## v1 — Runner (2026-08-15)
+
+Shipped. `go.mod`, `cmd/apilens`, and the full v1 engine per
+[docs/10-plan.md](docs/10-plan.md):
+
+- `apilens init`, `version`, `env list|use|show`
+- `apilens run`, `apilens test <ref>`
+- Config (`.apilens/config.yaml`), environments, `{{var}}` and `${ENV}`
+  interpolation (fail closed on missing variables)
+- HTTP runner with per-request timeout and `max_response_size` cap
+- YAML v1 test DSL, one test per file
+- Assertion engine: `status`, `header`, `body`, `json` (dotted paths),
+  `duration`
+- Test runner: sequential and parallel execution, transport-only retries,
+  `--fail-fast`
+- Terminal and JSON reporters (JSON schema matches
+  [docs/11-risks-and-gaps.md](docs/11-risks-and-gaps.md) G25)
+- Exit codes `0` / `1` / `2`
+- Security redactor on all display/report paths (headers and JSON body
+  keys masked by default, even with `capture_sensitive_headers: true`)
+- `examples/fixture-server` — a small fixture API plus a sample
+  `.apilens` project with 4 passing tests
+
+## v2 — Discover (2026-08-15)
+
+Shipped. Discovery orchestrator, OpenAPI + Express providers, registry
+cache, `discover`, `list`, `inspect` per [docs/07-discovery.md](docs/07-discovery.md):
+
+- Discovery provider port + orchestrator with merge/dedupe (endpoint
+  identity = normalized method + path; `openapi` source wins over
+  `express` when both find the same route)
+- `openapi` provider — OpenAPI 3 and Swagger 2 via `kin-openapi`
+  (ADR-008), well-known filename lookup + depth-4 walk, a broken spec is
+  skipped unless explicitly named with `--path`
+- `express` provider — conservative regex route scan (`app.`/`router.`/
+  named router variables only), `router.use` mount-prefix resolution,
+  dynamic route calls are never guessed at (`SkippedDynamicCount`)
+- `.apilens/api/registry.yaml` cache so `list`/`inspect` work in a new
+  process (ADR-017)
+- `apilens discover [--source] [--path] [--verbose]`
+- `apilens list [--method] [--tag]`
+- `apilens inspect <ref> [--method] [--live]` — spec-first, `--live`
+  probes through the same shared HTTP runner (ADR-018)
+- `discovery.openapi.{enabled,paths}` / `discovery.express.enabled` in
+  `config.yaml`
+- Fixed a latent bug along the way: environment loading no longer
+  eagerly expands `${ENV}` secrets at load time, so `discover`/`list`/
+  `inspect` don't require unrelated secrets (e.g. `AUTH_TOKEN`) to be set
+
+## v3 — Watch (2026-08-15)
+
+Shipped. Local forward proxy, in-memory history, session JSONL, `apilens
+watch`/`history` per [docs/08-proxy.md](docs/08-proxy.md):
+
+- Loopback-only forward proxy (`127.0.0.1:8888` default), bind policy
+  enforced before the CLI reports "listening" (`--allow-remote` for the
+  conscious unsafe override)
+- HTTPS `CONNECT` is tunneled byte-for-byte, no MITM (ADR-020)
+- `--upstream` reverse-proxy mode for apps that can't set `HTTP_PROXY`
+- Redaction applied before any exchange is displayed, stored, or written
+  to disk — same `internal/security` policy as `run`
+- In-memory ring buffer (`history.max_entries`, default 1000) assigns
+  session-scoped display IDs (`#1`, `#2`, ...)
+- Session JSONL file (`$APILENS_HISTORY_FILE` or
+  `/tmp/apilens-history-<hash>.jsonl`, mode `0600`) so a second terminal's
+  `history`/(future `replay`/`generate`) can see what `watch` captured
+- Static-asset noise filtering (`.js`/`.css`/`.png`/etc.) and
+  `--filter`/`--host` path/host restriction, `--all` to disable
+- Observed traffic upserts into the registry as `source: watch`,
+  persisted to `.apilens/api/registry.yaml` on clean stop — never
+  overwrites a richer OpenAPI/Express spec for the same endpoint
+- `apilens watch [--bind] [--port] [--allow-remote] [--upstream]
+  [--filter] [--host] [--all]`
+- `apilens history list [--limit]` / `apilens history show <id>
+  [--verbose]`
+- Fixed a concurrency bug found during manual testing: the proxy's
+  capture channel had two consumers racing on it; now a single internal
+  pump assigns display IDs and republishes to the CLI on its own channel
+
+## v4 — Replay
+
+Not shipped. `replay`, `generate`, path-matched `test`.
+
+## v4 — Replay
+
+Not shipped. `replay`, `generate`, path-matched `test`.
+
+## v5 — CI
+
+Not shipped. JUnit, GitHub Actions example.
+
+## v6 — Dashboard
+
+Not shipped. Local web UI on the same engine.
+
+## v7 — Contracts
+
+Not shipped. Schema assertions, OpenAPI export, contract tests.
+
+## v8 — Platforms
+
+Not shipped. More frameworks, mocks, API graphs.
+
+## v9 — Scale
+
+Not shipped. Load, recording, DSL v2 chaining, optional AI generate.
+
+## v10 — Team
+
+Not shipped. Remote runs, collaboration, cloud, GitHub/GitLab.

@@ -1,0 +1,22 @@
+---
+title: CLI command tree
+---
+flowchart TB
+    Root[apilens]
+    Root --> Init[init]
+    Root --> Discover[discover]
+    Root --> List[list]
+    Root --> Inspect[inspect]
+    Root --> Test[test]
+    Root --> Run[run]
+    Root --> Watch[watch]
+    Root --> History[history]
+    Root --> Replay[replay]
+    Root --> Generate[generate]
+    Root --> Env[env]
+    Root --> Version[version]
+    Env --> EnvList[env list]
+    Env --> EnvUse[env use]
+    Env --> EnvShow[env show]
+    History --> HistList[history list]
+    History --> HistShow[history show]

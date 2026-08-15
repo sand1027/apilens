@@ -1,0 +1,25 @@
+---
+title: Request execution pipeline
+---
+sequenceDiagram
+    participant Surface as CLI or UI
+    participant Engine as Engine
+    participant Env as Environment
+    participant Sec as Redactor
+    participant HTTP as HTTP Runner
+    participant Assert as Assertions
+    participant Rep as Reporter
+
+    Surface->>Engine: Run / Replay / Probe
+    Engine->>Env: Resolve variables and ENV
+    Env-->>Engine: Concrete request
+    Engine->>Sec: Strip secrets from logs
+    Engine->>HTTP: Execute
+    HTTP-->>Engine: Exchange + timing
+    Engine->>Sec: Redact capture if configured
+    alt Test execution
+        Engine->>Assert: Evaluate
+        Assert-->>Engine: Results
+    end
+    Engine->>Rep: Emit
+    Engine-->>Surface: Result + exit code

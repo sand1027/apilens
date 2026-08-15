@@ -1,0 +1,7 @@
+---
+title: Generate test from captured exchange
+---
+flowchart LR
+    Ex[Exchange 42] --> Safe[Strip secrets]
+    Safe --> YAML[YAML v1]
+    YAML --> Disk[".apilens/tests/..."]

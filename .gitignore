@@ -1,0 +1,29 @@
+# Binaries
+/apilens
+/apilens.exe
+/bin/
+dist/
+*.exe
+*.test
+*.out
+
+# Go
+vendor/
+coverage.out
+coverage.html
+
+# User project artifacts (if someone inits here)
+.apilens/reports/
+.apilens/history/
+.apilens/.current-env
+.apilens/environments/*.secrets.yaml
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Node (dashboard later)
+node_modules/
+web/dashboard/dist/

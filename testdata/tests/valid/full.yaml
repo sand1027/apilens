@@ -1,0 +1,40 @@
+version: 1
+name: Get User
+description: Fetch a single user by id
+tags: [users, smoke]
+skip: false
+
+request:
+  method: GET
+  url: "{{base_url}}/api/users/{{user_id}}"
+  headers:
+    Accept: application/json
+  query:
+    include: profile
+  auth:
+    type: bearer
+    token: "{{token}}"
+  timeout: 10s
+
+assert:
+  status:
+    equals: 200
+  headers:
+    content-type:
+      contains: application/json
+    x-request-id:
+      exists: true
+  body:
+    contains: "id"
+    not_contains: "error"
+  json:
+    success:
+      equals: true
+    data:
+      exists: true
+    data.id:
+      exists: true
+    data.email:
+      contains: "@"
+  duration:
+    less_than: 1000

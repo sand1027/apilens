@@ -1,0 +1,119 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+func newHistoryCommand(flags *globalFlags) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "history",
+		Short: "Inspect captured exchanges from the current or last watch session",
+	}
+	cmd.AddCommand(newHistoryListCommand(flags), newHistoryShowCommand(flags))
+	return cmd
+}
+
+func newHistoryListCommand(flags *globalFlags) *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List captured exchanges",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine(flags)
+			if err != nil {
+				return err
+			}
+			exchanges := eng.History(limit)
+			out := cmd.OutOrStdout()
+
+			if flags.format == "json" {
+				enc := json.NewEncoder(out)
+				enc.SetIndent("", "  ")
+				return enc.Encode(exchanges)
+			}
+			if len(exchanges) == 0 {
+				fmt.Fprintln(out, "No history yet. Run 'apilens watch' first.")
+				return nil
+			}
+			for _, ex := range exchanges {
+				fmt.Fprintf(out, "#%-3d %-6s %-24s %-6d %dms\n",
+					ex.Display, ex.Request.Method, ex.Request.URL,
+					ex.Response.StatusCode, ex.Timing.Duration.Milliseconds())
+			}
+			return nil
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 0, "Show only the most recent N exchanges")
+	return cmd
+}
+
+func newHistoryShowCommand(flags *globalFlags) *cobra.Command {
+	var verbose bool
+	cmd := &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show one captured exchange in detail",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseDisplayID(args[0])
+			if err != nil {
+				return err
+			}
+			eng, err := newEngine(flags)
+			if err != nil {
+				return err
+			}
+			ex, ok := eng.HistoryGet(id)
+			if !ok {
+				return fmt.Errorf("no history entry #%d", id)
+			}
+			out := cmd.OutOrStdout()
+			if flags.format == "json" {
+				enc := json.NewEncoder(out)
+				enc.SetIndent("", "  ")
+				return enc.Encode(ex)
+			}
+			fmt.Fprintf(out, "#%d %s %s\n", ex.Display, ex.Request.Method, ex.Request.URL)
+			fmt.Fprintf(out, "Status:   %d\n", ex.Response.StatusCode)
+			fmt.Fprintf(out, "Duration: %dms\n", ex.Timing.Duration.Milliseconds())
+			// Headers/body are already redacted by the proxy before they
+			// ever reach history (docs/09-security.md section 3), so
+			// printing them here is safe even without --verbose gating
+			// on a second redaction pass — but keep the default view
+			// terse per docs/08-proxy.md section 7.
+			if verbose {
+				fmt.Fprintln(out, "Request headers:")
+				for k, v := range ex.Request.Headers {
+					fmt.Fprintf(out, "  %s: %v\n", k, v)
+				}
+				fmt.Fprintln(out, "Response headers:")
+				for k, v := range ex.Response.Headers {
+					fmt.Fprintf(out, "  %s: %v\n", k, v)
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&verbose, "verbose", false, "Show redacted headers")
+	return cmd
+}
+
+// parseDisplayID accepts "42" or "#42" per docs/04-interfaces.md section 1.
+func parseDisplayID(s string) (int, error) {
+	if len(s) > 0 && s[0] == '#' {
+		s = s[1:]
+	}
+	var n int
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("invalid history id %q", s)
+		}
+		n = n*10 + int(c-'0')
+	}
+	if s == "" {
+		return 0, fmt.Errorf("invalid history id %q", s)
+	}
+	return n, nil
+}

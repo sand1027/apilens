@@ -1,0 +1,20 @@
+version: 1
+name: Create User
+tags: [users]
+
+request:
+  method: POST
+  url: "{{base_url}}/api/users"
+  headers:
+    Content-Type: application/json
+  body:
+    json:
+      name: Grace Hopper
+      email: grace@example.com
+
+assert:
+  status:
+    equals: 201
+  json:
+    data.name:
+      equals: Grace Hopper

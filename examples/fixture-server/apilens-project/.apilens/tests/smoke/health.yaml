@@ -1,0 +1,17 @@
+version: 1
+name: Health
+description: Sanity check that the fixture API is reachable
+tags: [smoke]
+
+request:
+  method: GET
+  url: "{{base_url}}/health"
+
+assert:
+  status:
+    equals: 200
+  json:
+    status:
+      equals: ok
+  duration:
+    less_than: 1000

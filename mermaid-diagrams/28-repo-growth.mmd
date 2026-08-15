@@ -1,0 +1,10 @@
+---
+title: Repository folders by first version
+---
+flowchart TD
+    Now[Now: docs architecture mermaid examples testdata] --> V1
+    V1[v1: cmd internal pkg go.mod] --> V5
+    V5[v5: .github/workflows] --> V6
+    V6[v6: web/dashboard] --> V8
+    V8[v8: more discovery providers] --> V10
+    V10[v10: remote worker / cloud adapters]

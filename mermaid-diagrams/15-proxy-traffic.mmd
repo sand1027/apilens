@@ -1,0 +1,15 @@
+---
+title: Runtime proxy traffic path
+---
+flowchart TD
+    User[Developer] --> Browser[Browser or HTTP client]
+    Browser --> Proxy["ApiLens proxy 127.0.0.1:8888"]
+    Proxy --> Cap[Capture request]
+    Cap --> Up[Forward unchanged]
+    Up --> App[Application / API]
+    App --> Proxy
+    Proxy --> CapRes[Capture response]
+    CapRes --> Hist[History store]
+    Hist --> Watch[watch printer]
+    Hist --> Bus[Event channel]
+    Proxy --> Browser

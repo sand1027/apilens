@@ -1,0 +1,10 @@
+---
+title: Proxy bind security policy
+---
+flowchart TD
+    Addr[Requested bind] --> Parse[Parse host]
+    Parse --> Loop{Loopback?}
+    Loop -->|yes| OK[Start]
+    Loop -->|no| Flag{allow-remote?}
+    Flag -->|no| Deny[ErrSecurity exit 2]
+    Flag -->|yes| Warn[Warn + start]

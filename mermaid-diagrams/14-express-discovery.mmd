@@ -1,0 +1,8 @@
+---
+title: Express source discovery
+---
+flowchart LR
+    Walk["Walk *.js / *.ts"] --> Parse[Parse source]
+    Parse --> Routes[Extract method + path]
+    Routes --> Mount[Resolve router mounts if obvious]
+    Mount --> Endpoints[Endpoints]

@@ -1,0 +1,17 @@
+---
+title: Built-in plugin registration
+---
+sequenceDiagram
+    participant Main as cmd/apilens
+    participant Host as plugins.Host
+    participant Eng as Engine
+
+    Main->>Host: New()
+    Main->>Host: RegisterDiscovery(openapi)
+    Main->>Host: RegisterDiscovery(express)
+    Main->>Host: RegisterReporter(terminal)
+    Main->>Host: RegisterReporter(json)
+    Main->>Host: RegisterAssertion(...)
+    Main->>Host: RegisterAuth(...)
+    Main->>Eng: New(EngineOptions with Host)
+    Main->>Main: cli.Execute(engine)

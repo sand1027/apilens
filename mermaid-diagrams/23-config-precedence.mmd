@@ -1,0 +1,9 @@
+---
+title: Configuration precedence — highest wins
+---
+flowchart TD
+    Flags[1 CLI flags] --> ProcEnv[2 Process environment]
+    ProcEnv --> EnvFile[3 Environment file]
+    EnvFile --> Config[4 config.yaml]
+    Config --> Defaults[5 Built-in defaults]
+    Defaults --> Request[Concrete HTTP request]

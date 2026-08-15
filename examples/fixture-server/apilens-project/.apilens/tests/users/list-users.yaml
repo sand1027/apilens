@@ -1,0 +1,21 @@
+version: 1
+name: List Users
+tags: [users, smoke]
+
+request:
+  method: GET
+  url: "{{base_url}}/api/users"
+  headers:
+    Accept: application/json
+
+assert:
+  status:
+    equals: 200
+  headers:
+    content-type:
+      contains: application/json
+  json:
+    data:
+      exists: true
+    data.0.id:
+      exists: true

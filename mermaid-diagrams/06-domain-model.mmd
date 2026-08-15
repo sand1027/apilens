@@ -1,0 +1,49 @@
+---
+title: Core domain model
+---
+classDiagram
+    class Endpoint {
+        ID
+        Method
+        Path
+        Source
+        Tags
+        Spec
+    }
+    class Exchange {
+        ID
+        Request
+        Response
+        Timing
+        Timestamp
+        Redacted
+    }
+    class TestCase {
+        Name
+        File
+        Request
+        Assert
+        Timeout
+        Retries
+    }
+    class TestResult {
+        Status
+        Exchange
+        Assertions
+    }
+    class Environment {
+        Name
+        BaseURL
+        Variables
+    }
+    class Report {
+        Results
+        Counts
+        Duration
+    }
+
+    Endpoint --> Exchange : may produce
+    TestCase --> Exchange : executes
+    TestCase --> TestResult
+    TestResult --> Report
+    Environment --> TestCase : interpolates

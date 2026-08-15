@@ -1,0 +1,8 @@
+---
+title: Watch history for replay and generate
+---
+flowchart LR
+    W[apilens watch] --> Mem[In-memory ring]
+    W --> File[Session file JSONL]
+    File --> R[apilens replay 42]
+    File --> G[apilens generate 42]
