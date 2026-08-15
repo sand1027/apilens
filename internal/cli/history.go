@@ -12,8 +12,51 @@ func newHistoryCommand(flags *globalFlags) *cobra.Command {
 		Use:   "history",
 		Short: "Inspect captured exchanges from the current or last watch session",
 	}
-	cmd.AddCommand(newHistoryListCommand(flags), newHistoryShowCommand(flags))
+	cmd.AddCommand(newHistoryListCommand(flags), newHistoryShowCommand(flags), newHistoryPageMapCommand(flags))
 	return cmd
+}
+
+// newHistoryPageMapCommand implements plan.md v8's "Page-to-API mapping".
+// Grouped under `history` since it's derived from captured traffic, same
+// data source as `history list`.
+func newHistoryPageMapCommand(flags *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "pagemap",
+		Short: "Group captured API calls by the page (Referer) that triggered them",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine(flags)
+			if err != nil {
+				return err
+			}
+			mappings := eng.PageMap()
+			out := cmd.OutOrStdout()
+
+			if flags.format == "json" {
+				enc := json.NewEncoder(out)
+				enc.SetIndent("", "  ")
+				return enc.Encode(mappings)
+			}
+
+			fmt.Fprintln(out, "PAGE-TO-API MAPPING")
+			fmt.Fprintln(out, "(inferred from the Referer header — a best-effort signal, not ground truth)")
+			fmt.Fprintln(out)
+			if len(mappings) == 0 {
+				fmt.Fprintln(out, "No history yet. Run 'apilens watch' first.")
+				return nil
+			}
+			for _, m := range mappings {
+				page := m.Page
+				if page == "" {
+					page = "(no Referer captured)"
+				}
+				fmt.Fprintln(out, page)
+				for _, c := range m.Calls {
+					fmt.Fprintf(out, "  %-6s %-24s %dx\n", c.Method, c.Path, c.Count)
+				}
+			}
+			return nil
+		},
+	}
 }
 
 func newHistoryListCommand(flags *globalFlags) *cobra.Command {

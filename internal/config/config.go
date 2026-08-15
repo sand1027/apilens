@@ -42,12 +42,27 @@ type SecurityConfig struct {
 }
 
 // DiscoveryConfig mirrors docs/03-plugins.md section 9's documented
-// `discovery:` block. openapi is enabled by default; express is opt-in
-// until its heuristics have proven themselves on a given project
-// (docs/03-plugins.md section 9: "express: enabled: false # Phase 2").
+// `discovery:` block. openapi is enabled by default; every framework
+// route-scan provider (express, fastify, nestjs, gin, fiber, echo) is
+// opt-in until its heuristics have proven themselves on a given project
+// (docs/03-plugins.md section 9: "express: enabled: false # Phase 2" —
+// the v8 providers extend the same policy rather than special-casing
+// themselves as trusted by default).
 type DiscoveryConfig struct {
 	OpenAPI OpenAPIDiscoveryConfig `yaml:"openapi"`
 	Express ExpressDiscoveryConfig `yaml:"express"`
+	Fastify FastifyDiscoveryConfig `yaml:"fastify"`
+	NestJS  NestJSDiscoveryConfig  `yaml:"nestjs"`
+	Gin     GinDiscoveryConfig     `yaml:"gin"`
+	Fiber   FiberDiscoveryConfig   `yaml:"fiber"`
+	Echo    EchoDiscoveryConfig    `yaml:"echo"`
+	// Ignore and Tags implement plan.md v8's "Test tags, suites, and
+	// ignore filters at discover time" (docs/discovery.FilterOptions).
+	// Ignore is a list of path.Match glob patterns; any discovered
+	// endpoint whose path matches one is dropped. Tags maps a glob
+	// pattern to a tag name applied to every matching endpoint.
+	Ignore []string          `yaml:"ignore"`
+	Tags   map[string]string `yaml:"tags"`
 }
 
 type OpenAPIDiscoveryConfig struct {
@@ -56,6 +71,26 @@ type OpenAPIDiscoveryConfig struct {
 }
 
 type ExpressDiscoveryConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type FastifyDiscoveryConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type NestJSDiscoveryConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type GinDiscoveryConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type FiberDiscoveryConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+type EchoDiscoveryConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
@@ -94,6 +129,23 @@ type rawConfig struct {
 		Express struct {
 			Enabled *bool `yaml:"enabled"`
 		} `yaml:"express"`
+		Fastify struct {
+			Enabled *bool `yaml:"enabled"`
+		} `yaml:"fastify"`
+		NestJS struct {
+			Enabled *bool `yaml:"enabled"`
+		} `yaml:"nestjs"`
+		Gin struct {
+			Enabled *bool `yaml:"enabled"`
+		} `yaml:"gin"`
+		Fiber struct {
+			Enabled *bool `yaml:"enabled"`
+		} `yaml:"fiber"`
+		Echo struct {
+			Enabled *bool `yaml:"enabled"`
+		} `yaml:"echo"`
+		Ignore []string          `yaml:"ignore"`
+		Tags   map[string]string `yaml:"tags"`
 	} `yaml:"discovery"`
 	Watch WatchConfig `yaml:"watch"`
 }
@@ -116,6 +168,11 @@ func Default() Config {
 		Discovery: DiscoveryConfig{
 			OpenAPI: OpenAPIDiscoveryConfig{Enabled: true},
 			Express: ExpressDiscoveryConfig{Enabled: false},
+			Fastify: FastifyDiscoveryConfig{Enabled: false},
+			NestJS:  NestJSDiscoveryConfig{Enabled: false},
+			Gin:     GinDiscoveryConfig{Enabled: false},
+			Fiber:   FiberDiscoveryConfig{Enabled: false},
+			Echo:    EchoDiscoveryConfig{Enabled: false},
 		},
 		Watch: WatchConfig{
 			Bind:             "127.0.0.1",
@@ -192,6 +249,27 @@ func Load(path string) (Config, error) {
 	}
 	if rc.Discovery.Express.Enabled != nil {
 		cfg.Discovery.Express.Enabled = *rc.Discovery.Express.Enabled
+	}
+	if rc.Discovery.Fastify.Enabled != nil {
+		cfg.Discovery.Fastify.Enabled = *rc.Discovery.Fastify.Enabled
+	}
+	if rc.Discovery.NestJS.Enabled != nil {
+		cfg.Discovery.NestJS.Enabled = *rc.Discovery.NestJS.Enabled
+	}
+	if rc.Discovery.Gin.Enabled != nil {
+		cfg.Discovery.Gin.Enabled = *rc.Discovery.Gin.Enabled
+	}
+	if rc.Discovery.Fiber.Enabled != nil {
+		cfg.Discovery.Fiber.Enabled = *rc.Discovery.Fiber.Enabled
+	}
+	if rc.Discovery.Echo.Enabled != nil {
+		cfg.Discovery.Echo.Enabled = *rc.Discovery.Echo.Enabled
+	}
+	if len(rc.Discovery.Ignore) > 0 {
+		cfg.Discovery.Ignore = rc.Discovery.Ignore
+	}
+	if len(rc.Discovery.Tags) > 0 {
+		cfg.Discovery.Tags = rc.Discovery.Tags
 	}
 
 	if rc.Watch.Bind != "" {

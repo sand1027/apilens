@@ -6,16 +6,18 @@ The CLI is the primary interface. A web dashboard comes later and will use the *
 
 ## Status
 
-**v1 (Runner) through v7 (Contracts) have shipped.** You can `apilens
+**v1 (Runner) through v8 (Platforms) have shipped.** You can `apilens
 init`, write YAML tests, `apilens run` them, `apilens discover` OpenAPI
-specs or Express routes into a registry, `apilens watch` a local proxy to
-see the APIs your app actually calls, turn a captured call into a saved
-test with `apilens generate`, wire the whole thing into CI with `--format
-junit` and `--quiet`, drive all of it from a local browser dashboard with
-`apilens ui`, assert on response shape with JSON Schema/regex/length
-checks, export the registry to a real OpenAPI document with `apilens spec
-export`, and check live or captured responses against that document with
-`apilens contract test`.
+specs or routes from Express/Fastify/NestJS/Gin/Fiber/Echo into a
+registry, `apilens watch` a local proxy to see the APIs your app actually
+calls, turn a captured call into a saved test with `apilens generate`,
+wire the whole thing into CI with `--format junit` and `--quiet`, drive
+all of it from a local browser dashboard with `apilens ui`, assert on
+response shape with JSON Schema/regex/length checks, export the registry
+to a real OpenAPI document with `apilens spec export`, check live or
+captured responses against that document with `apilens contract test`,
+serve mock responses with `apilens mock`, and get an inferred API
+dependency graph or page-to-API map from captured traffic.
 
 - Product releases: [plan.md](plan.md)
 - Architecture pack: [docs/README.md](docs/README.md)
@@ -50,7 +52,7 @@ Application → Discover → Registry → Watch → Capture → Inspect → Repl
 
 ## CLI
 
-Shipped (v1 through v7):
+Shipped (v1 through v8):
 
 ```text
 apilens init
@@ -63,11 +65,29 @@ apilens list [--method] [--tag]
 apilens inspect <ref> [--method] [--live]
 apilens watch [--bind] [--port] [--allow-remote] [--upstream] [--filter] [--host] [--all]
 apilens history list [--limit] / apilens history show <id> [--verbose]
+apilens history pagemap
 apilens replay <id> [--method] [--url] [--header] [--unset] [--query]
 apilens generate <id> [--out] [--force]
 apilens ui [--bind] [--port] [--allow-remote]
 apilens spec export [--out] [--force] [--title] [--spec-version]
 apilens contract test --spec <path> [--live]
+apilens mock [--bind] [--port] [--allow-remote]
+apilens graph [--window-ms]
+```
+
+Discovery now covers OpenAPI/Swagger, Express, Fastify, NestJS, Gin,
+Fiber, and Echo. Every framework provider is opt-in
+(`discovery.<name>.enabled: true` in `config.yaml`), same as Express since
+v2. Discover-time filters group or drop endpoints as they're found:
+
+```yaml
+discovery:
+  gin:
+    enabled: true
+  ignore:
+    - /internal/*
+  tags:
+    "/api/*": users-suite
 ```
 
 `apilens ui` starts a local web dashboard (localhost only) at
@@ -110,10 +130,19 @@ apilens spec export --out api/openapi.yaml    # OpenAPI 3 from registry + captur
 apilens contract test --spec api/openapi.yaml --live   # probe + validate against it
 ```
 
-Planned for v8+ (not yet implemented):
+Mock a downed API from what you've already discovered/captured, and get
+a heuristic view of how your APIs relate:
+
+```bash
+apilens mock --port 4489       # serves captured examples, or a minimal synthesized response
+apilens graph                  # inferred dependency graph from time-proximity in captured traffic
+apilens history pagemap        # captured calls grouped by the page (Referer) that triggered them
+```
+
+Planned for v9+ (not yet implemented):
 
 ```text
-apilens mock   # API mocking from the registry + captured examples
+apilens run --load   # load/soak mode on the same runner
 ```
 
 ## Documentation

@@ -15,6 +15,11 @@ import (
 var sourcePriority = map[string]int{
 	"openapi": 0,
 	"express": 1,
+	"fastify": 1,
+	"nestjs":  1,
+	"gin":     1,
+	"fiber":   1,
+	"echo":    1,
 	"watch":   2,
 }
 

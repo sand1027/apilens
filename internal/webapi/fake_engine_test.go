@@ -27,6 +27,9 @@ type fakeEngine struct {
 	currentEnvFn   func() domain.Environment
 	specExportFn   func(opts apilens.SpecExportOptions) (string, error)
 	contractTestFn func(ctx context.Context, opts apilens.ContractTestOptions) (*apilens.Report, error)
+	graphFn        func(opts apilens.GraphOptions) apilens.Graph
+	mockFn         func(ctx context.Context, opts apilens.MockOptions) (*apilens.MockSession, error)
+	pageMapFn      func() []apilens.PageMapping
 }
 
 func (f *fakeEngine) Init(ctx context.Context, path string, force bool) (apilens.InitResult, error) {
@@ -134,4 +137,25 @@ func (f *fakeEngine) ContractTest(ctx context.Context, opts apilens.ContractTest
 		return f.contractTestFn(ctx, opts)
 	}
 	return &apilens.Report{}, nil
+}
+
+func (f *fakeEngine) Graph(opts apilens.GraphOptions) apilens.Graph {
+	if f.graphFn != nil {
+		return f.graphFn(opts)
+	}
+	return apilens.Graph{}
+}
+
+func (f *fakeEngine) Mock(ctx context.Context, opts apilens.MockOptions) (*apilens.MockSession, error) {
+	if f.mockFn != nil {
+		return f.mockFn(ctx, opts)
+	}
+	return &apilens.MockSession{}, nil
+}
+
+func (f *fakeEngine) PageMap() []apilens.PageMapping {
+	if f.pageMapFn != nil {
+		return f.pageMapFn()
+	}
+	return nil
 }
