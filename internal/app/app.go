@@ -71,7 +71,7 @@ func New(opts Options) (*App, error) {
 	}
 
 	host := plugins.NewHost()
-	plugins.RegisterBuiltins(host, reporter.NewTerminal(nil), reporter.NewJSON(nil))
+	plugins.RegisterBuiltins(host, reporter.NewTerminal(nil), reporter.NewJSON(nil), reporter.NewJUnit(nil))
 
 	reg := registry.NewMemoryStore()
 	// Hydrate from the last discover write so `list`/`inspect` work in a
@@ -165,8 +165,13 @@ type RunFilter struct {
 	Sequential bool
 	Parallel   bool
 	FailFast   bool
-	// ReporterFormat selects "terminal" or "json"; empty uses config default.
+	// ReporterFormat selects "terminal", "json", or "junit"; empty uses
+	// config default.
 	ReporterFormat string
+	// Quiet suppresses passing/skipped lines in the terminal reporter
+	// (docs/05-cli.md's global --quiet: "Errors only"). No effect on
+	// json/junit, which already buffer and emit once.
+	Quiet bool
 }
 
 // RunSuite loads tests from .apilens/tests, applies filter, and executes

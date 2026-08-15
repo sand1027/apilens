@@ -1,0 +1,49 @@
+# Example CI job for ApiLens (plan.md v5 — CI).
+#
+# This workflow is a copy-paste starting point for any project that uses
+# ApiLens: build the CLI, start your API, run the suite, publish JUnit
+# results. It's wired against the bundled examples/fixture-server so it
+# actually runs (and can be verified) in this repo's own CI — swap the
+# "Start your API" and "Run API tests" env/steps for your real service.
+name: apilens-example
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build apilens
+        run: go build -o apilens ./cmd/apilens
+
+      - name: Start the example API
+        run: |
+          go run ./examples/fixture-server -addr :5050 &
+          sleep 1
+
+      - name: Run API tests
+        # --quiet keeps CI logs to failures + the summary. --format junit
+        # produces machine-readable output most CI dashboards can render.
+        # Exit code 1 on test failures, 2 on config errors — see
+        # docs/05-cli.md section 4.
+        working-directory: examples/fixture-server/apilens-project
+        run: ../../../apilens run --format junit --quiet > junit.xml
+        env:
+          AUTH_TOKEN: dev
+          APILENS_BASE_URL: http://localhost:5050
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apilens-junit-results
+          path: examples/fixture-server/apilens-project/junit.xml

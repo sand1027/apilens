@@ -41,7 +41,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&flags.project, "project", envOr("APILENS_PROJECT", "."), "Project root containing .apilens/")
 	root.PersistentFlags().StringVar(&flags.env, "env", envOr("APILENS_ENV", ""), "Environment name")
 	root.PersistentFlags().StringVar(&flags.config, "config", envOr("APILENS_CONFIG", ""), "Config path (defaults to <project>/.apilens/config.yaml)")
-	root.PersistentFlags().StringVar(&flags.format, "format", envOr("APILENS_FORMAT", "terminal"), "Output format: terminal or json")
+	root.PersistentFlags().StringVar(&flags.format, "format", envOr("APILENS_FORMAT", "terminal"), "Output format: terminal, json, or junit")
 	root.PersistentFlags().BoolVar(&flags.quiet, "quiet", false, "Errors only")
 	root.PersistentFlags().BoolVar(&flags.verbose, "verbose", false, "Debug logs (still redacted)")
 

@@ -21,6 +21,7 @@ func newTestCommand(flags *globalFlags) *cobra.Command {
 				Ref:            args[0],
 				Method:         method,
 				ReporterFormat: flags.format,
+				Quiet:          flags.quiet,
 			})
 			return handleRunResult(cmd, report, err)
 		},

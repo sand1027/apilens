@@ -111,9 +111,29 @@ Shipped. `replay`, `generate`, path-matched `test` per
 - Verified the full differentiator loop end-to-end with a real binary:
   `watch` → capture → `generate` → `run` → passing test
 
-## v5 — CI
+## v5 — CI (2026-08-15)
 
-Not shipped. JUnit, GitHub Actions example.
+Shipped. JUnit reporter, `--quiet`, GitHub Actions example — v1's JSON and
+exit codes packaged for machines, per plan.md v5:
+
+- `internal/reporter.JUnitReporter` — standard
+  `<testsuites><testsuite><testcase>` XML with `<failure>`/`<error>`/
+  `<skipped>` sub-elements, registered as a third built-in reporter
+  alongside terminal/json
+- `apilens run --format junit` / `apilens test --format junit`
+- `--quiet` (global flag, already declared in v1) now actually
+  suppresses passing/skipped lines in the terminal reporter while still
+  printing failures, errors, and the final summary — json/junit are
+  unaffected since they already buffer and emit once
+- `.github/workflows/apilens-example.yml` — a copy-paste GitHub Actions
+  job; wired against the bundled `examples/fixture-server` so it's a
+  real, runnable example rather than inert boilerplate
+- No new secrets exposure: verified the JUnit output never contains
+  `Authorization` or other redacted values, same policy as the JSON
+  reporter
+- Verified end-to-end with a real binary: `--format junit --quiet`
+  produces valid, parseable XML with the correct exit code for both
+  passing and failing suites
 
 ## v6 — Dashboard
 

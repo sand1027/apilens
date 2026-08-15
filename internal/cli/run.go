@@ -31,6 +31,7 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 				Parallel:       parallel,
 				FailFast:       failFast,
 				ReporterFormat: flags.format,
+				Quiet:          flags.quiet,
 			})
 			return handleRunResult(cmd, report, err)
 		},
