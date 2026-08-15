@@ -7,6 +7,7 @@ import History from "@/components/History";
 import Monitor from "@/components/Monitor";
 import TestRunner from "@/components/TestRunner";
 import EnvironmentSwitcher from "@/components/EnvironmentSwitcher";
+import HitsHUD from "@/components/HitsHUD";
 
 // Tabs are client-side state, not Next.js routes — see next.config.ts for
 // why (avoids static-export multi-route edge cases in this Next.js
@@ -40,7 +41,10 @@ export default function Page() {
           <h1 className="text-lg font-semibold">ApiLens</h1>
           <p className="text-xs text-neutral-500">Local dashboard — localhost only</p>
         </div>
-        <EnvironmentSwitcher />
+        <div className="flex items-center gap-3">
+          <HitsHUD onOpenInRequestBuilder={openInRequestBuilder} />
+          <EnvironmentSwitcher />
+        </div>
       </header>
 
       <nav className="border-b border-neutral-800 px-6 flex gap-1">

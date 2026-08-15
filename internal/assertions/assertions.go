@@ -120,6 +120,18 @@ func (e *Engine) Compile(spec domain.AssertionSpec) (domain.AssertionSet, error)
 		checks = append(checks, durationLessThanCheck{wantMS: *spec.Duration.LessThan})
 	}
 
+	if spec.GraphQL != nil {
+		if spec.GraphQL.NoErrors != nil {
+			checks = append(checks, graphqlNoErrorsCheck{wantNone: *spec.GraphQL.NoErrors})
+		}
+		if spec.GraphQL.HasData != nil {
+			checks = append(checks, graphqlHasDataCheck{want: *spec.GraphQL.HasData})
+		}
+		if spec.GraphQL.ErrorContains != nil {
+			checks = append(checks, graphqlErrorContainsCheck{want: *spec.GraphQL.ErrorContains})
+		}
+	}
+
 	for connName, d := range spec.DB {
 		if err := dbassert.ValidateReadOnly(d.Query); err != nil {
 			return domain.AssertionSet{}, domain.NewConfigError(
@@ -419,5 +431,97 @@ func (c durationLessThanCheck) Eval(ex domain.Exchange) domain.AssertionResult {
 		Passed:   passed,
 		Expected: strconv.Itoa(c.wantMS),
 		Actual:   strconv.FormatInt(actualMS, 10),
+	}
+}
+
+// --- graphql envelope ---
+
+type graphqlEnvelope struct {
+	Data   any   `json:"data"`
+	Errors []any `json:"errors"`
+}
+
+func parseGraphQLEnvelope(body []byte) (graphqlEnvelope, error) {
+	var env graphqlEnvelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		return graphqlEnvelope{}, fmt.Errorf("response is not JSON")
+	}
+	return env, nil
+}
+
+func errorMessages(errors []any) []string {
+	var msgs []string
+	for _, e := range errors {
+		switch t := e.(type) {
+		case map[string]any:
+			if m, ok := t["message"].(string); ok {
+				msgs = append(msgs, m)
+			} else {
+				msgs = append(msgs, fmt.Sprintf("%v", e))
+			}
+		default:
+			msgs = append(msgs, fmt.Sprintf("%v", e))
+		}
+	}
+	return msgs
+}
+
+type graphqlNoErrorsCheck struct{ wantNone bool }
+
+func (c graphqlNoErrorsCheck) Eval(ex domain.Exchange) domain.AssertionResult {
+	env, err := parseGraphQLEnvelope(ex.Response.Body)
+	if err != nil {
+		return domain.AssertionResult{Kind: domain.KindGraphQLNoErrors, Passed: false, Reason: err.Error()}
+	}
+	hasErrors := len(env.Errors) > 0
+	passed := hasErrors != c.wantNone
+	actual := "no errors"
+	if hasErrors {
+		actual = strings.Join(errorMessages(env.Errors), "; ")
+	}
+	expected := "no GraphQL errors"
+	if !c.wantNone {
+		expected = "GraphQL errors present"
+	}
+	return domain.AssertionResult{
+		Kind:     domain.KindGraphQLNoErrors,
+		Passed:   passed,
+		Expected: expected,
+		Actual:   actual,
+	}
+}
+
+type graphqlHasDataCheck struct{ want bool }
+
+func (c graphqlHasDataCheck) Eval(ex domain.Exchange) domain.AssertionResult {
+	env, err := parseGraphQLEnvelope(ex.Response.Body)
+	if err != nil {
+		return domain.AssertionResult{Kind: domain.KindGraphQLHasData, Passed: false, Reason: err.Error()}
+	}
+	hasData := env.Data != nil
+	passed := hasData == c.want
+	return domain.AssertionResult{
+		Kind:     domain.KindGraphQLHasData,
+		Passed:   passed,
+		Expected: strconv.FormatBool(c.want),
+		Actual:   strconv.FormatBool(hasData),
+	}
+}
+
+type graphqlErrorContainsCheck struct{ want string }
+
+func (c graphqlErrorContainsCheck) Eval(ex domain.Exchange) domain.AssertionResult {
+	env, err := parseGraphQLEnvelope(ex.Response.Body)
+	if err != nil {
+		return domain.AssertionResult{Kind: domain.KindGraphQLErrorContains, Passed: false, Reason: err.Error()}
+	}
+	msgs := errorMessages(env.Errors)
+	joined := strings.Join(msgs, "; ")
+	passed := strings.Contains(joined, c.want)
+	return domain.AssertionResult{
+		Kind:     domain.KindGraphQLErrorContains,
+		Passed:   passed,
+		Expected: c.want,
+		Actual:   joined,
 	}
 }

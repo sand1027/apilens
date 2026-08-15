@@ -9,10 +9,26 @@ type AssertionSpec struct {
 	Body     *BodySpec
 	JSON     map[string]JSONSpec // key = dotted path
 	Duration *DurationSpec
+	// GraphQL asserts over the GraphQL-over-HTTP envelope (data / errors)
+	// rather than HTTP status alone — GraphQL often returns 200 with
+	// errors in the body.
+	GraphQL *GraphQLAssertSpec
 	// DB is a v9 addition (plan.md v9: "Database assertions (opt-in
 	// plugin)") — keyed by the connection name configured under
 	// db.connections in config.yaml.
 	DB map[string]DBSpec
+}
+
+// GraphQLAssertSpec is the assert.graphql YAML block.
+type GraphQLAssertSpec struct {
+	// NoErrors true: fail if errors is a non-empty array.
+	// NoErrors false: fail if there are no errors (assert a GraphQL error).
+	NoErrors *bool
+	// HasData true: data must be present and non-null.
+	// HasData false: data must be missing or null.
+	HasData *bool
+	// ErrorContains fails unless some error message contains this substring.
+	ErrorContains *string
 }
 
 // DBSpec is one db.<connection> assertion block (plan.md v9). Exactly one
@@ -85,9 +101,12 @@ const (
 	KindJSONMatches     AssertionKind = "json.matches"
 	KindJSONLength      AssertionKind = "json.length"
 	KindDurationLess    AssertionKind = "duration.less_than"
-	KindDBRowCount      AssertionKind = "db.row_count_equals"
-	KindDBExists        AssertionKind = "db.exists"
-	KindDBEquals        AssertionKind = "db.equals"
+	KindDBRowCount         AssertionKind = "db.row_count_equals"
+	KindDBExists           AssertionKind = "db.exists"
+	KindDBEquals           AssertionKind = "db.equals"
+	KindGraphQLNoErrors    AssertionKind = "graphql.no_errors"
+	KindGraphQLHasData     AssertionKind = "graphql.has_data"
+	KindGraphQLErrorContains AssertionKind = "graphql.error_contains"
 )
 
 // AssertionResult is the outcome of evaluating a single compiled check

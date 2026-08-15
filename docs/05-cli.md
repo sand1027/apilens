@@ -11,8 +11,9 @@ Use Cobra + `spf13/pflag`. Global flags are persistent on the root command.
 ```mermaid
 flowchart TB
     Root[apilens]
-    Root --> Init[init]
-    Root --> Discover[discover]
+	Root --> Init[init]
+	Root --> UI[ui]
+	Root --> Discover[discover]
     Root --> List[list]
     Root --> Inspect[inspect]
     Root --> Test[test]
@@ -30,7 +31,7 @@ flowchart TB
     History --> HistShow[show]
 ```
 
-`ui` is reserved for Phase 5 and is not implemented in the MVP.
+`ui` is a local dashboard (`apilens ui`). It is not injected into the product app.
 
 ## 2. Global flags
 
@@ -51,6 +52,8 @@ flowchart TB
 
 Creates the `.apilens/` tree if missing. Refuses to overwrite `config.yaml` unless `--force`.
 
+Detects GraphQL SDL (`schema.graphql` / `*.graphql`) and OpenAPI files. For GraphQL it writes `tests/smoke/graphql.yaml` and a `base_url` of `http://localhost:3000` (or the origin of `NEXT_PUBLIC_GRAPHQL_API_URL` / similar in `.env`). It does **not** rewrite frontend or backend URLs.
+
 ```text
 .apilens/config.yaml
 .apilens/tests/.gitkeep
@@ -58,7 +61,23 @@ Creates the `.apilens/` tree if missing. Refuses to overwrite `config.yaml` unle
 .apilens/api/.gitkeep
 ```
 
-Writes a short comment in `local.yaml` showing `base_url` and `${AUTH_TOKEN}`.
+`local.yaml` has `base_url` and `token: "${AUTH_TOKEN}"`. Capture without changing app URLs: `apilens watch --browser`.
+
+Init injects a live-hits chip into `app/layout.tsx` (Next.js) or `index.html` when found. The chip renders in the product app even if `apilens ui` is down; with `apilens ui` on `:4488` it polls history. It does **not** rewrite frontend or backend URLs. A second `apilens init` refreshes the overlay component without rewriting the layout.
+
+`apilens init --ui` also opens the local dashboard.
+
+### `apilens ui`
+
+Local dashboard (loopback only). Same Engine as the CLI.
+
+```text
+apilens ui
+apilens ui --port 4488
+apilens init --ui
+```
+
+The first thing on the page is a corner chip: proxy up/down, last status (HTTP + GraphQL `errors[]` as `200*`), last duration, session hit count. Click it for the live list.
 
 ### `apilens discover`
 
@@ -67,7 +86,9 @@ Runs enabled discovery providers and upserts the registry.
 ```text
 apilens discover
 apilens discover --source openapi
+apilens discover --source graphql
 apilens discover --path ./openapi.yaml
+apilens discover --path ./schema.graphql
 ```
 
 Terminal output:
@@ -167,27 +188,15 @@ Success:  75%
 
 ### `apilens watch`
 
-Starts the local proxy and prints exchanges as they arrive.
+Starts the local **forward** proxy. Frontend and backend URLs stay unchanged. Browsers skip proxies for localhost. Capture with `--browser`: a dedicated Chrome using `--proxy-server` and `--proxy-bypass-list=<-loopback>` (PAC cannot proxy localhost in Chrome). Existing Safari/Chrome tabs will never appear in watch.
 
 ```text
 apilens watch
+apilens watch --browser --open http://localhost:3001
 apilens watch --port 8888
-apilens watch --bind 127.0.0.1:8888
-apilens watch --filter /api
 ```
 
-```text
-API WATCHER
-
-Listening on 127.0.0.1:8888
-Set HTTP_PROXY=http://127.0.0.1:8888
-
-#1  GET   /api/profile           200    81ms
-#2  GET   /api/dashboard         200   132ms
-#3  POST  /api/analytics         201   105ms
-```
-
-Ctrl+C stops the proxy and drops in-memory history. Say that in the banner so users generate tests before quitting.
+`--upstream` is reverse-proxy mode and **does** require the client to call the proxy URL. Prefer `--browser`.
 
 ### `apilens history`
 
@@ -198,7 +207,7 @@ apilens history list
 apilens history show 42
 ```
 
-Only meaningful while history exists. In MVP that means the same process — so `history` is most useful as a subcommand during `watch` **or** we persist a temp file for the session. Decision: Phase 3 writes an optional session file under `/tmp/apilens-history-<pid>.jsonl` so a second terminal can `replay` while watch is running. See [08-proxy.md](08-proxy.md).
+Only meaningful while history exists. Watch writes `<project>/.apilens/history/session.jsonl` (gitignored, overridable with `$APILENS_HISTORY_FILE`) so a second terminal can `replay` / `generate` / `history list` while watch is running or after Ctrl+C. See [08-proxy.md](08-proxy.md).
 
 ### `apilens replay <id>`
 
@@ -252,6 +261,7 @@ Prints version, commit, and build date. Needed for CI bug reports.
 | Command | Engine method |
 | --- | --- |
 | `init` | `Init` |
+| `ui` | Engine methods via the dashboard HTTP API |
 | `discover` | `Discover` |
 | `list` | `List` |
 | `inspect` | `Inspect` |

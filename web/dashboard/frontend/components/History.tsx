@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, decodeBase64, flattenHeaders, formatDuration, type Exchange } from "@/lib/api";
+import { api, ApiError, decodeBase64, flattenHeaders, formatDuration, isOverlayPoll, type Exchange } from "@/lib/api";
 import { Button, Card, EmptyState, ErrorBanner, MethodBadge, StatusBadge } from "@/components/ui";
 
 // History tab (plan.md v6): captured exchanges from the current or last
@@ -20,7 +20,7 @@ export default function History({
   async function load() {
     setLoading(true);
     try {
-      const res = await api.historyList();
+      const res = (await api.historyList()).filter((ex) => !isOverlayPoll(ex));
       setItems(res);
       setError(null);
     } catch (e) {

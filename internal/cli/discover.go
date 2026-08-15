@@ -30,7 +30,7 @@ func newDiscoverCommand(flags *globalFlags) *cobra.Command {
 			return printDiscoverResult(cmd, flags, res, verbose)
 		},
 	}
-	cmd.Flags().StringSliceVar(&source, "source", nil, "Limit to these provider names (e.g. openapi, express)")
+	cmd.Flags().StringSliceVar(&source, "source", nil, "Limit to these provider names (e.g. openapi, graphql, express)")
 	cmd.Flags().StringSliceVar(&path, "path", nil, "Explicit spec/source path(s), bypassing auto-detection")
 	cmd.Flags().BoolVar(&verbose, "verbose", false, "Show the source column")
 	return cmd

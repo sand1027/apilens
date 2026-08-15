@@ -1,0 +1,23 @@
+version: 1
+name: Ping without auth is rejected
+description: |
+  Stance graphql-shield requires a session for Query.ping. HTTP 200 with
+  errors[] must fail graphql.no_errors — this test asserts the error envelope
+  instead of treating 200 as success.
+tags: [graphql, public]
+request:
+  graphql:
+    query: |
+      query Ping {
+        ping {
+          message
+          uptime
+        }
+      }
+    operation: Ping
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: false
+    error_contains: "Not Author"

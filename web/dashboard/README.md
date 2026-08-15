@@ -12,7 +12,7 @@ web/dashboard/
 ├── embed.go              # go:embed of frontend/out into the apilens binary
 └── frontend/              # Next.js app (source of truth)
     ├── app/                # single route: app/page.tsx, tabs are client state
-    ├── components/         # Explorer, RequestBuilder, History, Monitor, TestRunner, EnvironmentSwitcher
+    ├── components/         # Explorer, RequestBuilder, History, Monitor, TestRunner, EnvironmentSwitcher, HitsHUD
     ├── lib/api.ts           # typed fetch wrapper around internal/webapi's REST+SSE API
     ├── next.config.ts       # output: "export" — static HTML/JS/CSS only
     └── out/                 # build output — committed, see below

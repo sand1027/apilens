@@ -20,13 +20,16 @@ import (
 
 // The "all:" prefix is required because go:embed otherwise silently
 // excludes any file or directory whose name starts with "_" or "." —
-// which is exactly Next.js's "_next/static/..." asset directory. Without
-// this prefix, every hashed JS/CSS chunk 404s at runtime while the HTML
-// (which references them) still embeds fine, since it doesn't start with
-// an underscore.
+// which is exactly Next.js's "_next/static/..." asset directory.
 //
 //go:embed all:frontend/out
 var embedded embed.FS
+
+// WidgetJS is the in-app overlay `apilens init` injects into the product
+// app. Served at /widget.js from `apilens ui`.
+//
+//go:embed widget.js
+var WidgetJS []byte
 
 // FS returns the embedded static site rooted at its own top level (i.e.
 // "index.html" not "frontend/out/index.html"), ready to hand to

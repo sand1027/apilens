@@ -13,8 +13,9 @@ import (
 // when picking the richest Spec / display path form. Unknown sources sort
 // after every known one.
 var sourcePriority = map[string]int{
-	"openapi": 0,
-	"express": 1,
+	"openapi":  0,
+	"graphql":  0,
+	"express":  1,
 	"fastify": 1,
 	"nestjs":  1,
 	"gin":     1,

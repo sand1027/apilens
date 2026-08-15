@@ -1,0 +1,23 @@
+version: 1
+name: List centers (public)
+tags: [graphql, public]
+request:
+  graphql:
+    query: |
+      query Centers {
+        centers {
+          _id
+          name
+          isOnline
+        }
+      }
+    operation: Centers
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true
+  json:
+    data.centers:
+      exists: true

@@ -1,0 +1,24 @@
+# Sample ApiLens project for HealthFlex Stance's Apollo GraphQL API.
+# Tests target POST /graphql. Start Stance on :3000, then `apilens run --tag public`.
+
+server:
+  base_url: ""
+
+testing:
+  parallel: true
+  retries: 1
+  timeout: 10s
+  reporter: terminal
+
+security:
+  capture_sensitive_headers: false
+  sensitive_headers: []
+  max_response_size: 5MB
+  proxy_allow_remote: false
+
+discovery:
+  openapi:
+    enabled: false
+  graphql:
+    enabled: true
+    paths: []

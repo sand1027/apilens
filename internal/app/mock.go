@@ -29,7 +29,7 @@ type MockHandle struct {
 // docs/11-risks-and-gaps.md G19 — the mapping is inferred, not ground
 // truth).
 func (a *App) PageMap() []pagemap.PageMapping {
-	return pagemap.Build(a.HistoryList(0))
+	return pagemap.Build(a.historyOrEmpty())
 }
 
 // Mock starts a local mock server (plan.md v8: "API mocking (apilens

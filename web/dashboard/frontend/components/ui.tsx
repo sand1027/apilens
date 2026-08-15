@@ -66,6 +66,9 @@ export function MethodBadge({ method }: { method: string }) {
   const colors: Record<string, string> = {
     GET: "bg-blue-950 text-blue-300 border-blue-800",
     POST: "bg-green-950 text-green-300 border-green-800",
+    QUERY: "bg-blue-950 text-blue-300 border-blue-800",
+    MUTATION: "bg-green-950 text-green-300 border-green-800",
+    SUBSCRIPTION: "bg-purple-950 text-purple-300 border-purple-800",
     PUT: "bg-yellow-950 text-yellow-300 border-yellow-800",
     PATCH: "bg-yellow-950 text-yellow-300 border-yellow-800",
     DELETE: "bg-red-950 text-red-300 border-red-800",

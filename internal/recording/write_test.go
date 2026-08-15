@@ -1,8 +1,10 @@
 package recording
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -97,7 +99,53 @@ func TestWriteSuite_MissingDirIsConfigError(t *testing.T) {
 	}
 }
 
-func intPtr(i int) *int { return &i }
+func TestWriteSuite_GraphQLAndAuthSurvive(t *testing.T) {
+	h := http.Header{}
+	h.Set("Accept-Encoding", "gzip, deflate")
+	h.Set("Authorization", "Bearer captured-secret")
+	h.Set("Content-Type", "application/json")
+	ex := domain.Exchange{
+		Request: domain.HTTPRequest{
+			Method:  "POST",
+			URL:     "http://localhost:3000/graphql",
+			Headers: h,
+			Body:    []byte(`{"query":"query Ping { ping { message } }","operationName":"Ping"}`),
+		},
+		Response: domain.HTTPResponse{StatusCode: 200, Body: []byte(`{"data":{"ping":{"message":"ok"}}}`)},
+	}
+	steps, err := Session([]domain.Exchange{ex})
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+
+	dir := t.TempDir()
+	written, err := WriteSuite(steps, WriteOptions{Dir: dir})
+	if err != nil {
+		t.Fatalf("WriteSuite: %v", err)
+	}
+	raw, err := os.ReadFile(written[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "graphql:") || !strings.Contains(content, "query Ping") {
+		t.Errorf("recorded YAML missing GraphQL query:\n%s", content)
+	}
+	if !strings.Contains(content, "auth:") || !strings.Contains(content, "{{token}}") {
+		t.Errorf("recorded YAML missing bearer {{token}}:\n%s", content)
+	}
+	if strings.Contains(content, "captured-secret") || strings.Contains(content, "Accept-Encoding") {
+		t.Errorf("recorded YAML leaked capture secrets or gzip header:\n%s", content)
+	}
+
+	tests, err := testdef.NewLoader().LoadAll(dir)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	if len(tests) != 1 || tests[0].Request.GraphQL == nil || tests[0].Request.Auth == nil {
+		t.Fatalf("compiled recorded test = %+v", tests)
+	}
+}
 
 func TestWriteSuite_CreatesOutputDirIfMissing(t *testing.T) {
 	steps := []Step{
@@ -114,3 +162,5 @@ func TestWriteSuite_CreatesOutputDirIfMissing(t *testing.T) {
 		t.Errorf("expected written file to exist: %v", err)
 	}
 }
+
+func intPtr(i int) *int { return &i }

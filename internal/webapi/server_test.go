@@ -127,7 +127,7 @@ func TestHandleRun_ConfigErrorReturns400(t *testing.T) {
 }
 
 func TestHandleHistoryList_ReturnsEmptyArrayNotNull(t *testing.T) {
-	eng := &fakeEngine{historyFn: func(limit int) []domain.Exchange { return nil }}
+	eng := &fakeEngine{historyFn: func(limit int) ([]domain.Exchange, error) { return nil, nil }}
 	s := New(eng, nil)
 	rec := doRequest(t, s, "GET", "/api/history", "")
 	if strings.TrimSpace(rec.Body.String()) != "[]" {
@@ -135,8 +135,26 @@ func TestHandleHistoryList_ReturnsEmptyArrayNotNull(t *testing.T) {
 	}
 }
 
+func TestHandleHistoryList_EncodesTransportError(t *testing.T) {
+	eng := &fakeEngine{historyFn: func(limit int) ([]domain.Exchange, error) {
+		return []domain.Exchange{{
+			Display: 3,
+			Request: domain.HTTPRequest{Method: "GET", URL: "http://localhost:3000/graphql"},
+			Err:     errors.New("dial tcp: connection refused"),
+		}}, nil
+	}}
+	s := New(eng, nil)
+	rec := doRequest(t, s, "GET", "/api/history", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "connection refused") {
+		t.Errorf("body = %s", rec.Body.String())
+	}
+}
+
 func TestHandleHistoryGet_NotFoundReturns404(t *testing.T) {
-	eng := &fakeEngine{historyGetFn: func(id int) (*domain.Exchange, bool) { return nil, false }}
+	eng := &fakeEngine{historyGetFn: func(id int) (*domain.Exchange, bool, error) { return nil, false, nil }}
 	s := New(eng, nil)
 	rec := doRequest(t, s, "GET", "/api/history/42", "")
 	if rec.Code != http.StatusNotFound {
@@ -248,5 +266,34 @@ func TestWriteError_MapsErrorTypesToStatusCodes(t *testing.T) {
 		if rec.Code != c.status {
 			t.Errorf("writeError(%v) status = %d, want %d", c.err, rec.Code, c.status)
 		}
+	}
+}
+
+func TestLoopbackCORS_AllowsLocalhostOrigin(t *testing.T) {
+	eng := &fakeEngine{historyFn: func(limit int) ([]domain.Exchange, error) { return nil, nil }}
+	s := New(eng, nil)
+	req := httptest.NewRequest("GET", "/api/history", nil)
+	req.Header.Set("Origin", "http://localhost:3001")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Header().Get("Access-Control-Allow-Origin") != "http://localhost:3001" {
+		t.Errorf("CORS origin = %q", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+	if rec.Header().Get("Access-Control-Allow-Private-Network") != "true" {
+		t.Errorf("PNA header = %q", rec.Header().Get("Access-Control-Allow-Private-Network"))
+	}
+}
+
+func TestWidgetJS_IsServed(t *testing.T) {
+	s := New(&fakeEngine{}, nil)
+	rec := doRequest(t, s, "GET", "/widget.js", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "apilens") && !strings.Contains(rec.Body.String(), "Live hits") {
+		t.Errorf("widget.js body missing overlay: %s", rec.Body.String()[:min(200, rec.Body.Len())])
+	}
+	if !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+		t.Errorf("Content-Type = %q", rec.Header().Get("Content-Type"))
 	}
 }

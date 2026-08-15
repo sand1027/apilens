@@ -8,6 +8,7 @@ testdata/
 │   ├── valid/          # compile-clean YAML v1 documents
 │   │   ├── contract-assertions.yaml  # v7: json.schema + json.matches + json.length together
 │   │   ├── schema-file.yaml           # v7: json.schema_file loading user.schema.json
+│   │   ├── graphql.yaml               # request.graphql + assert.graphql
 │   │   └── user.schema.json           # shared JSON Schema used by schema-file.yaml
 │   └── invalid/        # documents that must fail Compile with ErrConfig
 │       ├── bad-json-schema.yaml       # v7: malformed JSON Schema — config error, not a runtime failure
@@ -19,6 +20,8 @@ testdata/
 │   ├── valid/          # openapi.yaml + swagger.json (well-known names) that parse cleanly
 │   │   └── contract-spec.yaml         # v7: response schemas for internal/contract fixture tests
 │   └── invalid/        # a structurally broken spec (skip, don't abort)
+├── graphql/
+│   └── schema.graphql  # slim Stance-like SDL for the graphql discovery provider
 ├── express/
 │   ├── simple/         # package.json + app.js: app.get/post, a dynamic
 │   │                     route call that must be skipped, not guessed
@@ -29,4 +32,5 @@ testdata/
 
 Do not put secrets in this tree. `testdata/environments/valid/local.yaml`
 references `${AUTH_TOKEN}` — tests that load it must set that env var
-themselves (see internal/environment tests).
+themselves, or overlay a gitignored `<env>.secrets.yaml` (see
+internal/environment tests).

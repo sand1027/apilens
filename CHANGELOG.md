@@ -6,6 +6,39 @@ Format: version, date, summary. Details live in [plan.md](plan.md).
 
 ## Unreleased
 
+`apilens init` injects a live-hits chip into the product app (`app/layout.tsx`
+or `index.html`). The chip is a React overlay (bottom-left), not a script
+tag, so it shows even when `apilens ui` is down. With `apilens ui` on `:4488`
+it polls live history. App URLs are not changed. `apilens init --ui` also
+opens the dashboard. A second init refreshes the overlay component.
+
+Live hits HUD also remains on `apilens ui`: a corner chip (proxy up/down,
+last GraphQL op, status including `200*`, duration, hit count) expands to
+a modal.
+
+`<env>.secrets.yaml` now loads and merges over `<env>.yaml` (still
+gitignored). A missing `AUTH_TOKEN` names that file in the error.
+`apilens env show` still redacts secret keys. `apilens record` writes
+GraphQL + bearer `{{token}}` through the same YAML marshal as generate.
+Watch collapses duplicate GraphQL lines, surfaces history/append errors,
+and tests bind an ephemeral port (`127.0.0.1:0`) instead of colliding on
+`:8888`.
+
+GraphQL-over-HTTP is first-class: `request.graphql` / `assert.graphql` in the
+YAML DSL, SDL discovery (`discovery.graphql`, enabled by default), watch and
+generate treat GraphQL POST bodies as `QUERY`/`MUTATION` operations instead of
+a single `POST /graphql`, and HTTP 200 with `errors[]` fails
+`graphql.no_errors`. Example suite: [examples/stance-graphql](examples/stance-graphql)
+against HealthFlex Stance on `http://localhost:3000`.
+
+Watch session history lives at `.apilens/history/session.jsonl` in the project
+that started `watch`. `apilens ui` in another repo (Stance frontend vs API)
+follows a pointer at `$TMPDIR/apilens-current-history` so the overlay and
+dashboard show the same hits. `watch --browser` launches a dedicated
+Chrome with `--proxy-server` and `--proxy-bypass-list=<-loopback>;…:4488` so
+dashboard GraphQL to localhost is captured without changing app URLs. PAC is
+not used: Chrome cannot send localhost through a PAC script.
+
 ## v1 — Runner (2026-08-15)
 
 Shipped. `go.mod`, `cmd/apilens`, and the full v1 engine per

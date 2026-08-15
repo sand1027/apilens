@@ -70,6 +70,7 @@ type SecurityConfig struct {
 // themselves as trusted by default).
 type DiscoveryConfig struct {
 	OpenAPI OpenAPIDiscoveryConfig `yaml:"openapi"`
+	GraphQL GraphQLDiscoveryConfig `yaml:"graphql"`
 	Express ExpressDiscoveryConfig `yaml:"express"`
 	Fastify FastifyDiscoveryConfig `yaml:"fastify"`
 	NestJS  NestJSDiscoveryConfig  `yaml:"nestjs"`
@@ -86,6 +87,11 @@ type DiscoveryConfig struct {
 }
 
 type OpenAPIDiscoveryConfig struct {
+	Enabled bool     `yaml:"enabled"`
+	Paths   []string `yaml:"paths"`
+}
+
+type GraphQLDiscoveryConfig struct {
 	Enabled bool     `yaml:"enabled"`
 	Paths   []string `yaml:"paths"`
 }
@@ -146,6 +152,10 @@ type rawConfig struct {
 			Enabled *bool    `yaml:"enabled"`
 			Paths   []string `yaml:"paths"`
 		} `yaml:"openapi"`
+		GraphQL struct {
+			Enabled *bool    `yaml:"enabled"`
+			Paths   []string `yaml:"paths"`
+		} `yaml:"graphql"`
 		Express struct {
 			Enabled *bool `yaml:"enabled"`
 		} `yaml:"express"`
@@ -190,6 +200,7 @@ func Default() Config {
 		},
 		Discovery: DiscoveryConfig{
 			OpenAPI: OpenAPIDiscoveryConfig{Enabled: true},
+			GraphQL: GraphQLDiscoveryConfig{Enabled: true},
 			Express: ExpressDiscoveryConfig{Enabled: false},
 			Fastify: FastifyDiscoveryConfig{Enabled: false},
 			NestJS:  NestJSDiscoveryConfig{Enabled: false},
@@ -269,6 +280,12 @@ func Load(path string) (Config, error) {
 	}
 	if len(rc.Discovery.OpenAPI.Paths) > 0 {
 		cfg.Discovery.OpenAPI.Paths = rc.Discovery.OpenAPI.Paths
+	}
+	if rc.Discovery.GraphQL.Enabled != nil {
+		cfg.Discovery.GraphQL.Enabled = *rc.Discovery.GraphQL.Enabled
+	}
+	if len(rc.Discovery.GraphQL.Paths) > 0 {
+		cfg.Discovery.GraphQL.Paths = rc.Discovery.GraphQL.Paths
 	}
 	if rc.Discovery.Express.Enabled != nil {
 		cfg.Discovery.Express.Enabled = *rc.Discovery.Express.Enabled

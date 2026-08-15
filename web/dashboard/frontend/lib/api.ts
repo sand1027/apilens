@@ -236,3 +236,61 @@ export function flattenHeaders(h: Record<string, string[]> | null | undefined): 
   if (!h) return [];
   return Object.entries(h).map(([k, v]) => [k, v.join(", ")]);
 }
+
+export type GraphQLDisplay = {
+  method: string;
+  name: string;
+  gqlError: boolean;
+};
+
+/** Mirror of internal/graphqlop.DisplayColumns for the HUD / monitor. */
+export function graphqlDisplay(ex: Exchange): GraphQLDisplay {
+  const body = decodeBase64(ex.Request.Body ?? "");
+  try {
+    const payload = JSON.parse(body) as { query?: string; operationName?: string };
+    const query = (payload.query ?? "").trim();
+    if (query) {
+      const method = /^\s*mutation\b/i.test(query)
+        ? "MUTATION"
+        : /^\s*subscription\b/i.test(query)
+          ? "SUBSCRIPTION"
+          : "QUERY";
+      const named = (payload.operationName ?? "").trim();
+      const field = firstGraphQLField(query);
+      let gqlError = false;
+      try {
+        const env = JSON.parse(decodeBase64(ex.Response.Body ?? "")) as { errors?: unknown[] };
+        gqlError = Array.isArray(env.errors) && env.errors.length > 0;
+      } catch {
+        gqlError = false;
+      }
+      return { method, name: named || field || "anonymous", gqlError };
+    }
+  } catch {
+    // not GraphQL JSON
+  }
+  return { method: ex.Request.Method, name: ex.Request.URL, gqlError: false };
+}
+
+function firstGraphQLField(query: string): string {
+  const m = query.match(/\{\s*([A-Za-z_][\w]*)/);
+  return m?.[1] ?? "";
+}
+
+/** Overlay polls of apilens ui — not product API traffic. */
+export function isOverlayPoll(ex: Exchange): boolean {
+  const raw = ex.Request?.URL ?? "";
+  try {
+    const u = new URL(raw);
+    if (u.port !== "4488") return false;
+    return (
+      u.pathname === "/api/watch/status" ||
+      u.pathname.startsWith("/api/watch/") ||
+      u.pathname === "/api/history" ||
+      u.pathname.startsWith("/api/history/") ||
+      u.pathname === "/widget.js"
+    );
+  } catch {
+    return raw.includes(":4488/") && (raw.includes("/api/watch") || raw.includes("/api/history"));
+  }
+}

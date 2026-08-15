@@ -37,6 +37,11 @@ func New(engine apilens.Engine, frontend http.Handler) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	applyLoopbackCORS(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	s.mux.ServeHTTP(w, r)
 }
 
@@ -55,6 +60,7 @@ func (s *Server) routes(frontend http.Handler) {
 	s.mux.HandleFunc("POST /api/watch/stop", s.watchCtrl.handleStop)
 	s.mux.HandleFunc("GET /api/watch/status", s.watchCtrl.handleStatus)
 	s.mux.HandleFunc("GET /api/watch/events", s.watchCtrl.handleEvents)
+	s.mux.HandleFunc("GET /widget.js", handleWidgetJS)
 
 	if frontend != nil {
 		s.mux.Handle("/", frontend)

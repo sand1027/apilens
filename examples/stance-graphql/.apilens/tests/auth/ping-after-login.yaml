@@ -1,0 +1,25 @@
+version: 2
+name: Ping using login response token
+description: |
+  DSL v2 chaining — runs after login.yaml in the same suite. Unskip both
+  files and set STANCE_EMAIL / STANCE_PASSWORD.
+tags: [graphql, auth, login]
+skip: true
+request:
+  graphql:
+    query: |
+      query Ping {
+        ping {
+          message
+        }
+      }
+    operation: Ping
+  auth:
+    type: bearer
+    token: "{{responses.login.json.data.login.token}}"
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true

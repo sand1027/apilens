@@ -17,6 +17,7 @@ import (
 
 	"github.com/sandeepv/apilens/internal/auth"
 	"github.com/sandeepv/apilens/internal/domain"
+	"github.com/sandeepv/apilens/internal/graphqlop"
 	"gopkg.in/yaml.v3"
 )
 
@@ -98,8 +99,11 @@ func (r *Resolver) ResetResponses() {
 }
 
 // LoadDir reads every "*.yaml" / "*.yml" file in dir as an environment,
-// naming each by its filename stem. `${ENV}` placeholders inside
-// `variables` are NOT expanded here — see loadFile's comment for why.
+// naming each by its filename stem. Files named "<env>.secrets.yaml" are
+// not environments of their own: they merge on top of "<env>.yaml" after
+// that file loads (gitignored by init; see docs/09-security.md section 7).
+// `${ENV}` placeholders inside `variables` are NOT expanded here — see
+// loadFile's comment for why.
 func (r *Resolver) LoadDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -108,18 +112,21 @@ func (r *Resolver) LoadDir(dir string) error {
 		}
 		return domain.NewConfigError("reading environments directory", err)
 	}
-	names := make([]string, 0, len(entries))
+	var names []string
+	secrets := map[domain.EnvName]string{}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		name := e.Name()
-		if strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml") {
-			if strings.Contains(name, ".secrets.") {
-				continue // never auto-load secrets files (docs/09-security.md section 7)
-			}
-			names = append(names, name)
+		if !strings.HasSuffix(name, ".yaml") && !strings.HasSuffix(name, ".yml") {
+			continue
 		}
+		if strings.Contains(name, ".secrets.") {
+			secrets[envNameFromSecretsFilename(name)] = dir + "/" + name
+			continue
+		}
+		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
@@ -128,11 +135,28 @@ func (r *Resolver) LoadDir(dir string) error {
 			return err
 		}
 	}
+	secretNames := make([]string, 0, len(secrets))
+	for n := range secrets {
+		secretNames = append(secretNames, string(n))
+	}
+	sort.Strings(secretNames)
+	for _, n := range secretNames {
+		envName := domain.EnvName(n)
+		if err := r.mergeSecretsFile(secrets[envName], envName); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func envNameFromFilename(name string) domain.EnvName {
 	stem := strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml")
+	return domain.EnvName(stem)
+}
+
+func envNameFromSecretsFilename(name string) domain.EnvName {
+	stem := strings.TrimSuffix(strings.TrimSuffix(name, ".yaml"), ".yml")
+	stem = strings.TrimSuffix(stem, ".secrets")
 	return domain.EnvName(stem)
 }
 
@@ -178,6 +202,52 @@ func (r *Resolver) loadFile(path string, name domain.EnvName) error {
 	return nil
 }
 
+// mergeSecretsFile overlays "<env>.secrets.yaml" onto an already-loaded
+// environment (or creates one if only the secrets file exists). OS env
+// still wins for the same variable key, same as loadFile.
+func (r *Resolver) mergeSecretsFile(path string, name domain.EnvName) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return domain.NewConfigError(fmt.Sprintf("reading secrets file %s", path), err)
+	}
+	var doc fileDocument
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return domain.NewConfigError(fmt.Sprintf("parsing secrets file %s", path), err)
+	}
+	existing, ok := r.envs[name]
+	vars := existing.Variables
+	if !ok || vars == nil {
+		vars = make(map[string]string)
+	} else {
+		copied := make(map[string]string, len(vars)+len(doc.Variables))
+		for k, v := range vars {
+			copied[k] = v
+		}
+		vars = copied
+	}
+	for k, v := range doc.Variables {
+		vars[k] = v
+	}
+	for k := range vars {
+		if v, ok := r.osEnv(k); ok {
+			vars[k] = v
+		}
+	}
+	baseURL := existing.BaseURL
+	if doc.BaseURL != "" {
+		baseURL = doc.BaseURL
+	}
+	if v, ok := r.osEnv("APILENS_BASE_URL"); ok && v != "" {
+		baseURL = v
+	}
+	r.envs[name] = domain.Environment{
+		Name:      name,
+		BaseURL:   baseURL,
+		Variables: vars,
+	}
+	return nil
+}
+
 // expandOSEnv expands every "${NAME}" in s from the process environment.
 // A reference to an unset variable is a config error (fail closed).
 func (r *Resolver) expandOSEnv(s string) (string, error) {
@@ -191,9 +261,29 @@ func (r *Resolver) expandOSEnv(s string) (string, error) {
 		return match
 	})
 	if len(missing) > 0 {
-		return "", fmt.Errorf("missing required environment variable(s): %s", strings.Join(missing, ", "))
+		return "", missingEnvVarsError(missing)
 	}
 	return result, nil
+}
+
+func missingEnvVarsError(names []string) error {
+	msg := fmt.Sprintf("missing required environment variable(s): %s", strings.Join(names, ", "))
+	for _, n := range names {
+		if n == "AUTH_TOKEN" {
+			msg += ". Export AUTH_TOKEN, or put the value in .apilens/environments/<env>.secrets.yaml (gitignored):\n\nvariables:\n  token: \"...\"\n"
+			break
+		}
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+func interpolationHint(missing []string) string {
+	for _, n := range missing {
+		if n == "token" || strings.Contains(n, "AUTH_TOKEN") {
+			return " — export AUTH_TOKEN or add token to .apilens/environments/<env>.secrets.yaml (gitignored)"
+		}
+	}
+	return ""
 }
 
 // Use selects the current environment by name.
@@ -272,7 +362,7 @@ func (r *Resolver) Interpolate(s string) (string, error) {
 	})
 	if len(missing) > 0 {
 		return "", domain.NewConfigError(
-			fmt.Sprintf("undefined variable(s) in %q: %s", s, strings.Join(missing, ", ")), nil)
+			fmt.Sprintf("undefined variable(s) in %q: %s%s", s, strings.Join(missing, ", "), interpolationHint(missing)), nil)
 	}
 	return result, nil
 }
@@ -410,6 +500,28 @@ func (r *Resolver) InterpolateRequest(tmpl domain.RequestTemplate) (domain.HTTPR
 	if err != nil {
 		return domain.HTTPRequest{}, err
 	}
+	if tmpl.GraphQL != nil {
+		query, err := r.Interpolate(tmpl.GraphQL.Query)
+		if err != nil {
+			return domain.HTTPRequest{}, err
+		}
+		opName, err := r.Interpolate(tmpl.GraphQL.OperationName)
+		if err != nil {
+			return domain.HTTPRequest{}, err
+		}
+		vars := tmpl.GraphQL.Variables
+		if vars != nil {
+			vars, err = r.interpolateJSONValue(vars)
+			if err != nil {
+				return domain.HTTPRequest{}, err
+			}
+		}
+		body, err = graphqlop.Encode(query, vars, opName)
+		if err != nil {
+			return domain.HTTPRequest{}, domain.NewConfigError("marshaling GraphQL request", err)
+		}
+		contentType = "application/json"
+	}
 	if contentType != "" && headers.Get("Content-Type") == "" {
 		headers.Set("Content-Type", contentType)
 	}
@@ -421,7 +533,7 @@ func (r *Resolver) InterpolateRequest(tmpl domain.RequestTemplate) (domain.HTTPR
 	}
 
 	return domain.HTTPRequest{
-		Method:  tmpl.Method,
+		Method:  graphqlop.HTTPMethodFor(tmpl.Method),
 		URL:     urlStr,
 		Headers: headers,
 		Query:   query,

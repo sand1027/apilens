@@ -35,6 +35,9 @@ discovery:
   openapi:
     enabled: true
     paths: []
+  graphql:
+    enabled: true
+    paths: []
   express:
     enabled: false
   fastify:
@@ -47,8 +50,6 @@ discovery:
     enabled: false
   echo:
     enabled: false
-  # ignore: glob patterns (path.Match syntax) to drop from discover results
-  # tags: maps a glob pattern to a tag name applied to matching endpoints
   ignore: []
   tags: {}
 
@@ -58,25 +59,23 @@ watch:
   path_prefix: ""
   ignore_extensions: [js, css, map, png, jpg, svg, woff2]
 
-# db.connections is opt-in (empty by default): no db.* assertion can
-# compile until at least one named connection is configured here. dsn
-# values should reference an environment variable (e.g. "${DATABASE_URL}")
-# rather than embedding a plaintext credential.
+# db.connections is opt-in (empty by default).
 # db:
 #   connections:
 #     main:
-#       driver: sqlite   # or postgres
+#       driver: sqlite
 #       dsn: "${DATABASE_URL}"
 `
 
-const localEnvTemplate = `# Local environment. Do not put real secrets in this file directly —
-# use ${ENV_VAR} to pull them from the process environment at run time.
-base_url: http://localhost:5000
-variables:
-  token: "${AUTH_TOKEN}"
+const gitignoreSnippet = `
+# ApiLens project artifacts
+.apilens/reports/
+.apilens/history/
+.apilens/.current-env
+.apilens/environments/*.secrets.yaml
 `
 
-const sampleTestTemplate = `version: 1
+const restHealthTemplate = `version: 1
 name: Health
 description: Sanity check that the API is reachable
 tags: [smoke]
@@ -90,18 +89,29 @@ assert:
     equals: 200
 `
 
-const gitignoreSnippet = `
-# ApiLens project artifacts
-.apilens/reports/
-.apilens/history/
-.apilens/.current-env
-.apilens/environments/*.secrets.yaml
+const graphqlSmokeTemplate = `version: 1
+name: GraphQL reachable
+description: |
+  Does not change frontend or backend URLs. Hits {{base_url}}/graphql.
+  Query.__typename is always present; HTTP 200 means the server is up.
+tags: [smoke, graphql]
+
+request:
+  graphql:
+    query: |
+      query { __typename }
+
+assert:
+  status:
+    equals: 200
 `
 
 // Result reports what Init did, for the CLI to print.
 type Result struct {
-	Created []string
-	Skipped []string
+	Created  []string
+	Skipped  []string
+	Detected string
+	Notes    []string
 }
 
 // Init creates the .apilens/ tree rooted at projectDir. Existing files are
@@ -110,6 +120,10 @@ type Result struct {
 // --force").
 func Init(projectDir string, force bool) (Result, error) {
 	var res Result
+	det := detectProject(projectDir)
+	res.Detected = kindOf(det)
+	res.Notes = initNotes(det)
+
 	root := filepath.Join(projectDir, ".apilens")
 
 	dirs := []string{
@@ -124,13 +138,24 @@ func Init(projectDir string, force bool) (Result, error) {
 		}
 	}
 
+	localEnv := fmt.Sprintf(`# Local environment. Do not put secrets in this file —
+# use ${ENV_VAR} so they stay in the process environment (not git).
+#
+# Frontend and backend URLs stay as they are. apilens watch is a forward
+# proxy on :8888; use "apilens watch --browser" so localhost traffic is
+# captured without changing NEXT_PUBLIC_* or the API listen port.
+base_url: %s
+variables:
+  token: "${AUTH_TOKEN}"
+`, det.BaseURL)
+
 	files := []struct {
 		path    string
 		content string
 	}{
 		{filepath.Join(root, "config.yaml"), configTemplate},
 		{filepath.Join(root, "tests", ".gitkeep"), ""},
-		{filepath.Join(root, "environments", "local.yaml"), localEnvTemplate},
+		{filepath.Join(root, "environments", "local.yaml"), localEnv},
 		{filepath.Join(root, "api", ".gitkeep"), ""},
 	}
 
@@ -147,14 +172,18 @@ func Init(projectDir string, force bool) (Result, error) {
 		res.Created = append(res.Created, f.path)
 	}
 
-	// A starter smoke test only on first init (not forced), so re-running
-	// `init --force` doesn't clobber a user's edited health check.
-	smokeTestPath := filepath.Join(root, "tests", "smoke", "health.yaml")
+	smokeRel := "tests/smoke/health.yaml"
+	smokeBody := restHealthTemplate
+	if det.GraphQL {
+		smokeRel = "tests/smoke/graphql.yaml"
+		smokeBody = graphqlSmokeTemplate
+	}
+	smokeTestPath := filepath.Join(root, smokeRel)
 	if !fileExists(smokeTestPath) {
 		if err := os.MkdirAll(filepath.Dir(smokeTestPath), 0o755); err != nil {
 			return res, domain.NewConfigError("creating tests/smoke directory", err)
 		}
-		if err := os.WriteFile(smokeTestPath, []byte(sampleTestTemplate), 0o644); err != nil {
+		if err := os.WriteFile(smokeTestPath, []byte(smokeBody), 0o644); err != nil {
 			return res, domain.NewConfigError("writing sample test", err)
 		}
 		res.Created = append(res.Created, smokeTestPath)
@@ -166,7 +195,41 @@ func Init(projectDir string, force bool) (Result, error) {
 		return res, err
 	}
 
+	if err := injectAppWidget(projectDir, &res); err != nil {
+		return res, domain.NewConfigError("injecting live-hits overlay", err)
+	}
+
 	return res, nil
+}
+
+func kindOf(d detected) string {
+	if d.GraphQL {
+		return "graphql"
+	}
+	if d.OpenAPI {
+		return "openapi"
+	}
+	return "http"
+}
+
+func initNotes(d detected) []string {
+	notes := []string{
+		"Do not change the frontend or backend URL for capture.",
+		"apilens watch is a forward proxy on 127.0.0.1:8888.",
+		`Capture with: apilens watch --browser`,
+		"That opens Chrome with localhost proxied through ApiLens; the app still calls its normal URL.",
+		`Secrets: export AUTH_TOKEN='...' then apilens run`,
+		`Live hits overlay is in this app (blue chip, bottom-left). Keep apilens ui running.`,
+		`Also on apilens ui, or apilens init --ui.`,
+	}
+	if d.GraphQL {
+		notes = append([]string{
+			"Detected GraphQL SDL. discovery.graphql is on.",
+			"base_url is " + d.BaseURL + " (from the repo, or Apollo's local default).",
+			"Then: apilens discover --source graphql",
+		}, notes...)
+	}
+	return notes
 }
 
 func fileExists(path string) bool {
@@ -174,9 +237,6 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// appendGitignore adds the ApiLens ignore snippet to the project's
-// .gitignore if it's not already present. Does not create a git repo
-// (docs/02-packages.md section 5: "init ... does not create a git repo").
 func appendGitignore(projectDir string) error {
 	path := filepath.Join(projectDir, ".gitignore")
 	existing, err := os.ReadFile(path)
@@ -184,7 +244,7 @@ func appendGitignore(projectDir string) error {
 		return domain.NewConfigError("reading .gitignore", err)
 	}
 	if strings.Contains(string(existing), ".apilens/reports/") {
-		return nil // already present
+		return nil
 	}
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {

@@ -152,6 +152,84 @@ func TestFromExchange_GeneratedYAMLParsesBack(t *testing.T) {
 	}
 }
 
+func TestFromExchange_GraphQLCapture(t *testing.T) {
+	dir := t.TempDir()
+	svc := New(dir)
+	ex := sampleExchange()
+	ex.Request.URL = "http://localhost:4000/graphql"
+	ex.Request.Body = []byte(`{"query":"query Ping { ping { message } }","operationName":"Ping"}`)
+	ex.Response.StatusCode = 200
+	g, err := svc.FromExchange(ex, Options{})
+	if err != nil {
+		t.Fatalf("FromExchange: %v", err)
+	}
+	if g.Test.Request.GraphQL == nil || g.Test.Request.GraphQL.OperationName != "Ping" {
+		t.Fatalf("GraphQL = %+v", g.Test.Request.GraphQL)
+	}
+	if g.Test.Assert.GraphQL == nil || g.Test.Assert.GraphQL.NoErrors == nil || !*g.Test.Assert.GraphQL.NoErrors {
+		t.Fatalf("expected graphql.no_errors on generated test")
+	}
+	if !containsStr(string(g.Content), "no_errors") {
+		t.Errorf("generated YAML missing graphql assertions:\n%s", g.Content)
+	}
+	want := filepath.Join(dir, ".apilens", "tests", "generated", "query-ping.yaml")
+	if g.Path != want {
+		t.Errorf("Path = %q, want %q", g.Path, want)
+	}
+}
+
+func TestFromExchange_DropsBrowserNoiseAndAcceptEncoding(t *testing.T) {
+	dir := t.TempDir()
+	svc := New(dir)
+	h := http.Header{}
+	h.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	h.Set("Content-Length", "1093")
+	h.Set("Proxy-Connection", "keep-alive")
+	h.Set("User-Agent", "Mozilla/5.0")
+	h.Set("Sec-Fetch-Mode", "cors")
+	h.Set("Content-Type", "application/json")
+	h.Set("X-Center-Id", "center-1")
+	ex := sampleExchange()
+	ex.Request.Headers = h
+	g, err := svc.FromExchange(ex, Options{})
+	if err != nil {
+		t.Fatalf("FromExchange: %v", err)
+	}
+	if _, ok := g.Test.Request.Headers["Accept-Encoding"]; ok {
+		t.Fatal("Accept-Encoding must be dropped (Go will not decompress if it is set)")
+	}
+	if _, ok := g.Test.Request.Headers["Content-Length"]; ok {
+		t.Fatal("Content-Length must be dropped (body is rebuilt)")
+	}
+	if _, ok := g.Test.Request.Headers["User-Agent"]; ok {
+		t.Fatal("User-Agent must be dropped")
+	}
+	if g.Test.Request.Headers["X-Center-Id"] != "center-1" {
+		t.Fatalf("X-Center-Id should survive, got %v", g.Test.Request.Headers)
+	}
+	if g.Test.Request.Headers["Content-Type"] != "application/json" {
+		t.Fatal("Content-Type should survive")
+	}
+}
+
+func TestFromExchange_GraphQLAddsBearerAuthFromEnv(t *testing.T) {
+	dir := t.TempDir()
+	svc := New(dir)
+	ex := sampleExchange()
+	ex.Request.URL = "http://localhost:3000/graphql"
+	ex.Request.Body = []byte(`{"query":"query Ping { ping { message } }","operationName":"Ping"}`)
+	g, err := svc.FromExchange(ex, Options{})
+	if err != nil {
+		t.Fatalf("FromExchange: %v", err)
+	}
+	if g.Test.Request.Auth == nil || g.Test.Request.Auth.Type != "bearer" || g.Test.Request.Auth.Token != "{{token}}" {
+		t.Fatalf("Auth = %+v, want bearer {{token}}", g.Test.Request.Auth)
+	}
+	if !containsStr(string(g.Content), "{{token}}") {
+		t.Fatalf("generated YAML missing {{token}}:\n%s", g.Content)
+	}
+}
+
 func containsStr(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

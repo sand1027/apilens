@@ -1,0 +1,30 @@
+version: 2
+name: Login mutation
+id: login
+description: |
+  Public mutation. Needs STANCE_EMAIL and STANCE_PASSWORD. Skipped by
+  default — do not commit real credentials. Pair with ping-after-login.yaml.
+tags: [graphql, auth, login]
+skip: true
+request:
+  graphql:
+    query: |
+      mutation Login($input: LoginInput!) {
+        login(input: $input) {
+          token
+        }
+      }
+    operation: Login
+    variables:
+      input:
+        email: "{{email}}"
+        password: "{{password}}"
+assert:
+  status:
+    equals: 200
+  graphql:
+    no_errors: true
+    has_data: true
+  json:
+    data.login.token:
+      exists: true

@@ -20,8 +20,8 @@ type fakeEngine struct {
 	watchFn            func(ctx context.Context, opts apilens.WatchOptions) (*apilens.WatchSession, error)
 	replayFn           func(ctx context.Context, id int, overrides apilens.ReplayOverrides) (*domain.Exchange, error)
 	generateFn         func(id int, opts apilens.GenerateOptions) (*apilens.GeneratedTest, error)
-	historyFn          func(limit int) []domain.Exchange
-	historyGetFn       func(displayID int) (*domain.Exchange, bool)
+	historyFn          func(limit int) ([]domain.Exchange, error)
+	historyGetFn       func(displayID int) (*domain.Exchange, bool, error)
 	useEnvFn           func(name string) error
 	environmentsFn     func() []domain.Environment
 	currentEnvFn       func() domain.Environment
@@ -91,18 +91,18 @@ func (f *fakeEngine) Generate(id int, opts apilens.GenerateOptions) (*apilens.Ge
 	return &apilens.GeneratedTest{}, nil
 }
 
-func (f *fakeEngine) History(limit int) []domain.Exchange {
+func (f *fakeEngine) History(limit int) ([]domain.Exchange, error) {
 	if f.historyFn != nil {
 		return f.historyFn(limit)
 	}
-	return nil
+	return nil, nil
 }
 
-func (f *fakeEngine) HistoryGet(displayID int) (*domain.Exchange, bool) {
+func (f *fakeEngine) HistoryGet(displayID int) (*domain.Exchange, bool, error) {
 	if f.historyGetFn != nil {
 		return f.historyGetFn(displayID)
 	}
-	return nil, false
+	return nil, false, nil
 }
 
 func (f *fakeEngine) UseEnv(name string) error {

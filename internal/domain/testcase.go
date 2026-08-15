@@ -13,6 +13,17 @@ type RequestTemplate struct {
 	Body    BodyTemplate
 	Auth    *AuthTemplate
 	Timeout time.Duration // zero means "use suite default"
+	// GraphQL, when set, is serialized to a GraphQL-over-HTTP JSON body
+	// (query / variables / operationName) at interpolate time. Mutually
+	// exclusive with Body.
+	GraphQL *GraphQLTemplate
+}
+
+// GraphQLTemplate is the request.graphql YAML block.
+type GraphQLTemplate struct {
+	Query         string
+	Variables     any
+	OperationName string
 }
 
 // BodyTemplate holds either a JSON body (arbitrary structure, string leaves

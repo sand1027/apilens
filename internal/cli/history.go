@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/sandeepv/apilens/internal/history"
 	"github.com/spf13/cobra"
 )
 
@@ -69,7 +70,10 @@ func newHistoryListCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			exchanges := eng.History(limit)
+			exchanges, err := eng.History(limit)
+			if err != nil {
+				return err
+			}
 			out := cmd.OutOrStdout()
 
 			if flags.format == "json" {
@@ -79,12 +83,14 @@ func newHistoryListCommand(flags *globalFlags) *cobra.Command {
 			}
 			if len(exchanges) == 0 {
 				fmt.Fprintln(out, "No history yet. Run 'apilens watch' first.")
+				fmt.Fprintf(out, "This command reads: %s\n", history.DefaultPath(flags.project))
+				if p := history.ActivePath(); p != "" && p != history.DefaultPath(flags.project) {
+					fmt.Fprintf(out, "Active watch session: %s\n", p)
+				}
 				return nil
 			}
 			for _, ex := range exchanges {
-				fmt.Fprintf(out, "#%-3d %-6s %-24s %-6d %dms\n",
-					ex.Display, ex.Request.Method, ex.Request.URL,
-					ex.Response.StatusCode, ex.Timing.Duration.Milliseconds())
+				fmt.Fprintln(out, formatExchangeLine(ex))
 			}
 			return nil
 		},
@@ -108,7 +114,10 @@ func newHistoryShowCommand(flags *globalFlags) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ex, ok := eng.HistoryGet(id)
+			ex, ok, err := eng.HistoryGet(id)
+			if err != nil {
+				return err
+			}
 			if !ok {
 				return fmt.Errorf("no history entry #%d", id)
 			}

@@ -35,6 +35,13 @@ type requestDoc struct {
 	Body    bodyDoc           `yaml:"body"`
 	Auth    *authDoc          `yaml:"auth"`
 	Timeout string            `yaml:"timeout"`
+	GraphQL *graphqlDoc       `yaml:"graphql"`
+}
+
+type graphqlDoc struct {
+	Query         string `yaml:"query"`
+	Variables     any    `yaml:"variables"`
+	OperationName string `yaml:"operation"`
 }
 
 type bodyDoc struct {
@@ -59,10 +66,17 @@ type assertDoc struct {
 	Body     *bodyAssertDoc       `yaml:"body"`
 	JSON     map[string]jsonDoc   `yaml:"json"`
 	Duration *durationDoc         `yaml:"duration"`
+	GraphQL  *graphqlAssertDoc    `yaml:"graphql"`
 	// DB is a v9 addition (plan.md v9: "Database assertions"). Key is
 	// the connection name configured under db.connections in
 	// config.yaml.
 	DB map[string]dbDoc `yaml:"db"`
+}
+
+type graphqlAssertDoc struct {
+	NoErrors      *bool   `yaml:"no_errors"`
+	HasData       *bool   `yaml:"has_data"`
+	ErrorContains *string `yaml:"error_contains"`
 }
 
 type dbDoc struct {

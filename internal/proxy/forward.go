@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 	"path"
 	"strings"
@@ -118,8 +119,14 @@ func (p *Proxy) maybeCapture(
 // noise by extension unless --all, and optionally restrict to a path
 // prefix / host.
 func (p *Proxy) passesFilter(r *http.Request) bool {
+	if isApiLensUIRequest(r) {
+		return false
+	}
 	f := p.opts.Filter
 	if f.Host != "" && !strings.EqualFold(r.Host, f.Host) {
+		return false
+	}
+	if !f.All && isBrowserUpdateHost(r.Host, r.URL.Host) {
 		return false
 	}
 	if f.PathPrefix != "" && !strings.HasPrefix(r.URL.Path, f.PathPrefix) {
@@ -152,4 +159,54 @@ func readLimited(rc io.Reader, limit int64) ([]byte, bool, error) {
 		return data[:limit], true, nil
 	}
 	return data, false, nil
+}
+
+// isApiLensUIRequest drops traffic to the local dashboard (default :4488)
+// so overlay polls are not captured as API hits.
+func isApiLensUIRequest(r *http.Request) bool {
+	for _, host := range []string{r.Host, r.URL.Host} {
+		if host == "" {
+			continue
+		}
+		h, port, err := net.SplitHostPort(host)
+		if err != nil {
+			continue
+		}
+		if port != "4488" {
+			continue
+		}
+		if isLoopbackName(h) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLoopbackName(h string) bool {
+	h = strings.Trim(h, "[]")
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
+// isBrowserUpdateHost drops Chrome component-update noise (gvt1, googleapis)
+// so watch stays readable. --all captures it.
+func isBrowserUpdateHost(hosts ...string) bool {
+	for _, host := range hosts {
+		h := strings.ToLower(host)
+		if i := strings.IndexByte(h, ':'); i >= 0 {
+			h = h[:i]
+		}
+		for _, s := range []string{
+			"googleapis.com", "gvt1.com", "google.com", "gstatic.com",
+			"googleusercontent.com", "google-analytics.com",
+		} {
+			if h == s || strings.HasSuffix(h, "."+s) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -100,6 +100,27 @@ func TestReadAll_SkipsCorruptLines(t *testing.T) {
 	}
 }
 
+func TestSearchPaths_IncludesActiveWatchSession(t *testing.T) {
+	t.Setenv("APILENS_HISTORY_FILE", "")
+	ptr := filepath.Join(t.TempDir(), "ptr")
+	t.Setenv("APILENS_HISTORY_POINTER", ptr)
+	project := t.TempDir()
+	active := filepath.Join(t.TempDir(), "watch-session.jsonl")
+	if err := SetActivePath(active); err != nil {
+		t.Fatal(err)
+	}
+	paths := SearchPaths(project)
+	if len(paths) != 2 {
+		t.Fatalf("SearchPaths = %v", paths)
+	}
+	if paths[0] != DefaultPath(project) {
+		t.Errorf("first path = %q", paths[0])
+	}
+	if got := ActivePath(); got != paths[1] {
+		t.Errorf("active = %q path[1] = %q", got, paths[1])
+	}
+}
+
 func TestDefaultPath_UsesEnvVarWhenSet(t *testing.T) {
 	t.Setenv("APILENS_HISTORY_FILE", "/custom/path.jsonl")
 	got := DefaultPath("/some/project")
@@ -118,5 +139,58 @@ func TestDefaultPath_DeterministicPerProjectDir(t *testing.T) {
 	}
 	if a == c {
 		t.Error("expected different paths for different project dirs")
+	}
+	want := filepath.Join("/some/project", ".apilens", "history", "session.jsonl")
+	if a != want {
+		t.Errorf("DefaultPath = %q, want %q", a, want)
+	}
+}
+
+func TestNewSessionFile_CreatesParentDirAndTruncates(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".apilens", "history", "session.jsonl")
+	if _, err := NewSessionFile(path); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected nested session file: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("{\"display_id\":1,\"method\":\"GET\",\"url\":\"/stale\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewSessionFile(path); err != nil {
+		t.Fatalf("recreate: %v", err)
+	}
+	got, err := ReadAll(path)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected truncated session, got %d records", len(got))
+	}
+}
+
+func TestReadAll_SkipsOversizedLineAndKeepsNeighbors(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+	huge := make([]byte, maxHistoryLine+8)
+	for i := range huge {
+		huge[i] = 'x'
+	}
+	content := "{\"display_id\":1,\"method\":\"GET\",\"url\":\"/ok\"}\n" +
+		string(huge) + "\n" +
+		"{\"display_id\":2,\"method\":\"POST\",\"url\":\"/graphql\"}\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadAll(path)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 records after skipping oversized line, got %d", len(got))
+	}
+	if got[1].Request.URL != "/graphql" {
+		t.Errorf("record 1 url = %q", got[1].Request.URL)
 	}
 }

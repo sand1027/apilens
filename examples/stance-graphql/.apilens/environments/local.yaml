@@ -1,0 +1,6 @@
+# Stance API (apps/api) listens on :3000 in development.
+base_url: http://localhost:3000
+variables:
+  token: "${AUTH_TOKEN}"
+  email: "${STANCE_EMAIL}"
+  password: "${STANCE_PASSWORD}"

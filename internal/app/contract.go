@@ -94,7 +94,7 @@ func (a *App) ContractTest(ctx context.Context, opts ContractTestOptions) (domai
 // specexport/contract "example" without needing a live probe.
 func (a *App) latestExchangePerEndpoint(endpoints []domain.Endpoint) map[domain.EndpointID]domain.Exchange {
 	examples := make(map[domain.EndpointID]domain.Exchange)
-	all := a.HistoryList(0)
+	all := a.historyOrEmpty()
 	// HistoryList returns oldest-first; walk in reverse so the first hit
 	// per endpoint ID is the most recent capture.
 	for i := len(all) - 1; i >= 0; i-- {

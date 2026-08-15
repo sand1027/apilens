@@ -65,12 +65,12 @@ Phase 3 session file:
 
 ```text
 $APILENS_HISTORY_FILE   or
-/tmp/apilens-history-<project-hash>.jsonl
+<project>/.apilens/history/session.jsonl
 ```
 
-Watch writes JSONL (already redacted). `replay` / `generate` / `history` read the file if in-memory is empty.
+Watch writes JSONL (already redacted). `replay` / `generate` / `history` / `apilens ui` read the file if in-memory is empty. Watch also publishes that path to `$TMPDIR/apilens-current-history` so `apilens ui` started from a different repo (for example Stance frontend vs API) still lists the same hits. `$APILENS_HISTORY_POINTER` overrides the pointer file.
 
-The file is 0600, in a temp dir, and is not the long-term store. Persistent history is a later feature.
+The file is 0600. Starting `watch` again truncates it (new session, display IDs restart at #1). Ctrl+C keeps the file for `history` / `generate` until the next watch.
 
 ## 4. Capture record
 
@@ -141,15 +141,15 @@ API WATCHER
 
 Listening on 127.0.0.1:8888
 HTTP_PROXY=http://127.0.0.1:8888
-History: /tmp/apilens-history-3f2a.jsonl
+History: .apilens/history/session.jsonl
 Ctrl+C stops watch and keeps the session file until reboot.
 
-#1  GET   /api/profile           200    81ms
-#2  GET   /api/dashboard         200   132ms
-#3  POST  /api/analytics         201   105ms
+#1  GET        /api/profile                    200   81ms
+#2  QUERY      ping                            200   12ms
+#3  MUTATION   login                           200*  90ms
 ```
 
-`--verbose` prints redacted headers after each line. Default is one line per exchange.
+`--verbose` prints redacted headers after each line. Default is one line per exchange. Consecutive identical GraphQL operations (same `QUERY`/`MUTATION` + name + status) collapse to one line plus `(×N same)`. GraphQL prints `QUERY`/`MUTATION` and the operation name instead of `POST /graphql`. `200*` means HTTP 200 with `errors[]` in the GraphQL envelope. An unreadable session file is an error on `history list` / `history show`, not an empty list.
 
 ## 8. Replay
 

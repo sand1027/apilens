@@ -10,6 +10,7 @@ import (
 	"github.com/sandeepv/apilens/internal/discovery/providers/fastify"
 	"github.com/sandeepv/apilens/internal/discovery/providers/fiber"
 	"github.com/sandeepv/apilens/internal/discovery/providers/gin"
+	gqlprovider "github.com/sandeepv/apilens/internal/discovery/providers/graphql"
 	"github.com/sandeepv/apilens/internal/discovery/providers/nestjs"
 	"github.com/sandeepv/apilens/internal/discovery/providers/openapi"
 	"github.com/sandeepv/apilens/internal/domain"
@@ -47,6 +48,7 @@ func (a *App) buildOrchestrator() *discovery.Orchestrator {
 		enabled  bool
 	}{
 		{openapi.New(a.Config.Discovery.OpenAPI.Paths), a.Config.Discovery.OpenAPI.Enabled},
+		{gqlprovider.New(a.Config.Discovery.GraphQL.Paths), a.Config.Discovery.GraphQL.Enabled},
 		{express.New(), a.Config.Discovery.Express.Enabled},
 		{fastify.New(), a.Config.Discovery.Fastify.Enabled},
 		{nestjs.New(), a.Config.Discovery.NestJS.Enabled},
