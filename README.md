@@ -6,12 +6,13 @@ The CLI is the primary interface. A web dashboard comes later and will use the *
 
 ## Status
 
-**v1 (Runner) through v5 (CI) have shipped.** You can `apilens init`,
-write YAML tests, `apilens run` them, `apilens discover` OpenAPI specs or
-Express routes into a registry, `apilens watch` a local proxy to see the
-APIs your app actually calls, turn a captured call into a saved test with
-`apilens generate`, and wire the whole thing into CI with `--format junit`
-and `--quiet` — see [.github/workflows/apilens-example.yml](.github/workflows/apilens-example.yml).
+**v1 (Runner) through v6 (Dashboard) have shipped.** You can `apilens
+init`, write YAML tests, `apilens run` them, `apilens discover` OpenAPI
+specs or Express routes into a registry, `apilens watch` a local proxy to
+see the APIs your app actually calls, turn a captured call into a saved
+test with `apilens generate`, wire the whole thing into CI with `--format
+junit` and `--quiet`, and drive all of it from a local browser dashboard
+with `apilens ui`.
 
 - Product releases: [plan.md](plan.md)
 - Architecture pack: [docs/README.md](docs/README.md)
@@ -46,7 +47,7 @@ Application → Discover → Registry → Watch → Capture → Inspect → Repl
 
 ## CLI
 
-Shipped (v1 through v5):
+Shipped (v1 through v6):
 
 ```text
 apilens init
@@ -61,7 +62,15 @@ apilens watch [--bind] [--port] [--allow-remote] [--upstream] [--filter] [--host
 apilens history list [--limit] / apilens history show <id> [--verbose]
 apilens replay <id> [--method] [--url] [--header] [--unset] [--query]
 apilens generate <id> [--out] [--force]
+apilens ui [--bind] [--port] [--allow-remote]
 ```
+
+`apilens ui` starts a local web dashboard (localhost only) at
+`http://127.0.0.1:4488` with an API Explorer, Request Builder, History,
+Runtime Monitor, Test Runner, and environment switcher — every action
+calls the same Engine methods the CLI does. See
+[web/dashboard/README.md](web/dashboard/README.md) for the frontend build
+workflow.
 
 `--format` accepts `terminal`, `json`, or `junit` on `run`/`test`. CI
 example:
@@ -82,10 +91,10 @@ apilens generate 1          # writes .apilens/tests/generated/get-health.yaml
 apilens run                 # runs it, exit 0
 ```
 
-Planned for v6+ (not yet implemented):
+Planned for v7+ (not yet implemented):
 
 ```text
-apilens ui
+apilens spec export   # OpenAPI export from registry + captures
 ```
 
 ## Documentation
