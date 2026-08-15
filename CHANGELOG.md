@@ -135,9 +135,38 @@ exit codes packaged for machines, per plan.md v5:
   produces valid, parseable XML with the correct exit code for both
   passing and failing suites
 
-## v6 — Dashboard
+## v6 — Dashboard (2026-08-15)
 
-Not shipped. Local web UI on the same engine.
+Shipped. Local web dashboard, same engine, per plan.md v6:
+
+- `internal/webapi` — JSON REST + SSE surface wrapping `pkg/apilens.Engine`
+  exactly the way `internal/cli` does; every dashboard action is an
+  existing Engine method (endpoints, discover, inspect, run, history,
+  replay, generate, environments, watch start/stop/status/events)
+- `apilens ui [--bind] [--port] [--allow-remote]` — same loopback-only
+  bind policy as `watch` (docs/09-security.md section 5)
+- Frontend: a Next.js (TypeScript, Tailwind) single-page app, statically
+  exported and embedded into the `apilens` binary via `go:embed` — no
+  separate Node process at runtime. Views: API Explorer, Request Builder
+  (replay with overrides), History, Runtime Monitor (live SSE feed while
+  `watch` runs), Test Runner, Environment switcher
+- Multi-subscriber SSE broadcaster for the Runtime Monitor, so more than
+  one open dashboard tab can watch the same live traffic
+- Fixed two real bugs found during implementation:
+  - `go:embed frontend/out` (without the `all:` prefix) silently drops
+    any path starting with `_` — which is exactly Next.js's
+    `_next/static/...` asset directory. Every JS/CSS chunk 404'd at
+    runtime while the build and embed both reported success. Fixed to
+    `go:embed all:frontend/out`, with a regression test
+  - Several `react-hooks/set-state-in-effect` false positives on the
+    ordinary fetch-on-mount pattern (a known, acknowledged upstream
+    issue — facebook/react#34743, #34905)
+- 22 new Go unit tests (`internal/webapi`) plus a Go-side embed
+  regression test; `npm run lint` and `npm run build` both clean
+- Verified end-to-end with a real built binary and the bundled fixture
+  server: dashboard HTML + static assets load, discover/run/replay/
+  generate/environments work through the REST API, and the Runtime
+  Monitor's SSE stream delivers real proxied traffic live
 
 ## v7 — Contracts
 
