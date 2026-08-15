@@ -1,0 +1,14 @@
+name: Bad JSON Schema
+request:
+  method: GET
+  url: "{{base_url}}/api/users"
+assert:
+  status:
+    equals: 200
+  json:
+    data:
+      # "type" must be a string or array of strings per JSON Schema — this
+      # is a malformed schema and must fail at Compile time, not at
+      # assertion-eval time.
+      schema:
+        type: 12345

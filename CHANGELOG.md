@@ -168,9 +168,49 @@ Shipped. Local web dashboard, same engine, per plan.md v6:
   generate/environments work through the REST API, and the Runtime
   Monitor's SSE stream delivers real proxied traffic live
 
-## v7 — Contracts
+## v7 — Contracts (2026-08-15)
 
-Not shipped. Schema assertions, OpenAPI export, contract tests.
+Shipped. Tests can enforce response shape, not just status codes, and
+captures/registry can become a reviewable OpenAPI spec, per plan.md v7:
+
+- New assertion kinds, wired into `internal/assertions.Engine.Compile`
+  alongside the existing status/header/body/json checks:
+  - `json.<path>.schema` — inline JSON Schema, or `schema_file` (resolved
+    relative to the test file's own directory) via
+    `santhosh-tekuri/jsonschema/v6`
+  - `json.<path>.matches` — regex against a string value
+  - `json.<path>.length` — works on strings (char count), arrays, and
+    objects (key count), not just arrays
+  - A malformed schema or invalid regex is a **config error caught at
+    Compile time**, before any HTTP call — never a surprise mid-suite
+    (docs/06-test-dsl.md section 12's compile-vs-assertion-failure rule)
+- `internal/specexport` — builds a real OpenAPI 3 document (via
+  `kin-openapi`'s own types, so marshaling is spec-correct) from the
+  registry plus the most recent captured exchange per endpoint: real
+  status codes and inferred response schemas (object/array/string/
+  integer-vs-number/boolean) come from captures when available
+- `apilens spec export [--out] [--force] [--title] [--spec-version]` —
+  refuses to overwrite an existing file without `--force`, same policy
+  as `generate`
+- `internal/contract` — loads a stored OpenAPI document and validates a
+  captured or live-probed response against the response schema the spec
+  declares for the status code actually returned (honors OpenAPI's `2XX`
+  patterned fallback). An endpoint with no schema and no way to obtain a
+  response is reported as **skipped**, never a false failure
+- `apilens contract test --spec <path> [--live]` — `--live` probes
+  through the same shared runner every other live call uses when no
+  capture is available; terminal and `--format json` output, same exit
+  code convention as `run` (`0` clean, `1` any failed/errored)
+- 51 new unit tests across `internal/assertions`, `internal/testdef`,
+  `internal/specexport`, and `internal/contract`; new testdata fixtures
+  for schema/regex/length assertions (valid and intentionally-malformed)
+  and a contract-testing OpenAPI fixture
+- Verified end-to-end with a real built binary and the bundled fixture
+  server: a schema+regex+length assertion test passes against live
+  traffic, `spec export` writes a valid OpenAPI document, and
+  `contract test --live` against a hand-written spec correctly passes an
+  endpoint matching its schema while failing another whose response is
+  missing a field the spec requires — exit code `1`, clear diagnostic
 
 ## v8 — Platforms
 

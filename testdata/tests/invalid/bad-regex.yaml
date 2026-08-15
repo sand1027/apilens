@@ -1,0 +1,12 @@
+name: Bad Regex
+request:
+  method: GET
+  url: "{{base_url}}/api/users"
+assert:
+  status:
+    equals: 200
+  json:
+    data.0.email:
+      # unbalanced parenthesis — must fail at Compile time as a config
+      # error, not surface as a runtime assertion failure.
+      matches: "^[^@]+@("

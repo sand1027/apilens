@@ -1,0 +1,15 @@
+version: 1
+name: User Matches Shared Schema File
+description: Exercises v7's json.schema_file — loads user.schema.json from this same directory
+tags: [users, contract]
+
+request:
+  method: GET
+  url: "{{base_url}}/api/users/1"
+
+assert:
+  status:
+    equals: 200
+  json:
+    data:
+      schema_file: "./user.schema.json"

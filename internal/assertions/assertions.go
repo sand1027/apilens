@@ -69,6 +69,25 @@ func (e *Engine) Compile(spec domain.AssertionSpec) (domain.AssertionSet, error)
 		if j.Contains != nil {
 			checks = append(checks, jsonContainsCheck{path: path, want: j.Contains})
 		}
+		if j.Schema != nil {
+			check, err := newJSONSchemaCheck(path, j.Schema)
+			if err != nil {
+				return domain.AssertionSet{}, domain.NewConfigError(
+					fmt.Sprintf("compiling json.%s.schema", path), err)
+			}
+			checks = append(checks, check)
+		}
+		if j.Matches != nil {
+			check, err := newJSONMatchesCheck(path, *j.Matches)
+			if err != nil {
+				return domain.AssertionSet{}, domain.NewConfigError(
+					fmt.Sprintf("compiling json.%s.matches", path), err)
+			}
+			checks = append(checks, check)
+		}
+		if j.Length != nil {
+			checks = append(checks, jsonLengthCheck{path: path, want: *j.Length})
+		}
 	}
 
 	if spec.Duration != nil && spec.Duration.LessThan != nil {

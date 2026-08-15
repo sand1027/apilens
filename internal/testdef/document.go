@@ -72,6 +72,15 @@ type jsonDoc struct {
 	Exists   *bool `yaml:"exists"`
 	Equals   any   `yaml:"equals"`
 	Contains any   `yaml:"contains"`
+	// Schema/Matches/Length are v7 additions (docs/06-test-dsl.md
+	// section 11 lists these as explicitly out of v1; plan.md v7 ships
+	// them). Schema is an inline JSON Schema document; SchemaFile
+	// (v7 addition) loads it from a file relative to the test's own
+	// directory so schemas can be shared across tests.
+	Schema     any     `yaml:"schema"`
+	SchemaFile string  `yaml:"schema_file"`
+	Matches    *string `yaml:"matches"`
+	Length     *int    `yaml:"length"`
 }
 
 type durationDoc struct {
