@@ -8,11 +8,13 @@ func TestLoadAll_ValidDirLoadsSortedByPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
-	if len(tests) != 2 {
-		t.Fatalf("expected 2 tests, got %d: %+v", len(tests), tests)
+	// contract-assertions.yaml, full.yaml, minimal.yaml, schema-file.yaml —
+	// user.schema.json is skipped (not a .yaml/.yml file).
+	if len(tests) != 4 {
+		t.Fatalf("expected 4 tests, got %d: %+v", len(tests), tests)
 	}
-	// full.yaml < minimal.yaml alphabetically
-	if tests[0].File[len(tests[0].File)-9:] != "full.yaml" {
+	// contract-assertions.yaml < full.yaml alphabetically
+	if tests[0].File[len(tests[0].File)-24:] != "contract-assertions.yaml" {
 		t.Errorf("expected sorted order, first file = %s", tests[0].File)
 	}
 }

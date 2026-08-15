@@ -1,7 +1,10 @@
 package testdef
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/sandeepv/apilens/internal/domain"
@@ -114,7 +117,27 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 	if len(a.JSON) > 0 {
 		spec.JSON = make(map[string]domain.JSONSpec, len(a.JSON))
 		for path, j := range a.JSON {
-			spec.JSON[path] = domain.JSONSpec{Exists: j.Exists, Equals: j.Equals, Contains: j.Contains}
+			js := domain.JSONSpec{
+				Exists:   j.Exists,
+				Equals:   j.Equals,
+				Contains: j.Contains,
+				Schema:   j.Schema,
+				Matches:  j.Matches,
+				Length:   j.Length,
+			}
+			if j.Schema != nil && j.SchemaFile != "" {
+				return domain.AssertionSpec{}, domain.NewConfigError(
+					fmt.Sprintf("%s: json.%s cannot set both \"schema\" and \"schema_file\"", file, path), nil)
+			}
+			if j.SchemaFile != "" {
+				loaded, err := loadSchemaFile(file, j.SchemaFile)
+				if err != nil {
+					return domain.AssertionSpec{}, domain.NewConfigError(
+						fmt.Sprintf("%s: json.%s.schema_file", file, path), err)
+				}
+				js.Schema = loaded
+			}
+			spec.JSON[path] = js
 		}
 	}
 	if a.Duration != nil {
@@ -127,4 +150,23 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 			fmt.Sprintf("%s: test has no assertions under \"assert\"", file), nil)
 	}
 	return spec, nil
+}
+
+// loadSchemaFile resolves schemaFile relative to the test file's own
+// directory (so a shared schema can live next to the tests that use it,
+// e.g. .apilens/tests/users/user.schema.json) and parses it as JSON.
+func loadSchemaFile(testFile, schemaFile string) (any, error) {
+	path := schemaFile
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(filepath.Dir(testFile), schemaFile)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading schema file %s: %w", path, err)
+	}
+	var parsed any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		return nil, fmt.Errorf("parsing schema file %s: %w", path, err)
+	}
+	return parsed, nil
 }

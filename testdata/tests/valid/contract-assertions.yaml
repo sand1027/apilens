@@ -1,0 +1,28 @@
+version: 1
+name: List Users Contract Shape
+description: Exercises v7's json.schema, json.matches, and json.length assertion kinds together
+tags: [users, contract]
+
+request:
+  method: GET
+  url: "{{base_url}}/api/users"
+
+assert:
+  status:
+    equals: 200
+  json:
+    data:
+      length: 2
+    data.0:
+      schema:
+        type: object
+        required: [id, name, email]
+        properties:
+          id:
+            type: integer
+          name:
+            type: string
+          email:
+            type: string
+    data.0.email:
+      matches: "^[^@]+@[^@]+\\.[^@]+$"

@@ -1,0 +1,12 @@
+name: Both Schema Forms
+request:
+  method: GET
+  url: "{{base_url}}/api/users"
+assert:
+  status:
+    equals: 200
+  json:
+    data:
+      schema:
+        type: array
+      schema_file: "./user.schema.json"

@@ -25,6 +25,8 @@ type fakeEngine struct {
 	useEnvFn       func(name string) error
 	environmentsFn func() []domain.Environment
 	currentEnvFn   func() domain.Environment
+	specExportFn   func(opts apilens.SpecExportOptions) (string, error)
+	contractTestFn func(ctx context.Context, opts apilens.ContractTestOptions) (*apilens.Report, error)
 }
 
 func (f *fakeEngine) Init(ctx context.Context, path string, force bool) (apilens.InitResult, error) {
@@ -119,3 +121,17 @@ func (f *fakeEngine) CurrentEnv() domain.Environment {
 }
 
 func (f *fakeEngine) PersistCurrentEnv() error { return nil }
+
+func (f *fakeEngine) SpecExport(opts apilens.SpecExportOptions) (string, error) {
+	if f.specExportFn != nil {
+		return f.specExportFn(opts)
+	}
+	return "", nil
+}
+
+func (f *fakeEngine) ContractTest(ctx context.Context, opts apilens.ContractTestOptions) (*apilens.Report, error) {
+	if f.contractTestFn != nil {
+		return f.contractTestFn(ctx, opts)
+	}
+	return &apilens.Report{}, nil
+}

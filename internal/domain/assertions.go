@@ -31,6 +31,13 @@ type JSONSpec struct {
 	Exists   *bool
 	Equals   any
 	Contains any
+	// Schema, Matches, and Length are v7 additions (plan.md v7:
+	// "JSON Schema assertions ... Richer JSON path / regex assertions ...
+	// Array length assertions" — explicitly out of scope for v1 per
+	// docs/06-test-dsl.md section 11, now shipping).
+	Schema  any     // inline JSON Schema document (map[string]any) validated against the value at Path
+	Matches *string // regex; value at Path must be a string matching this pattern
+	Length  *int    // value at Path must be a string, array, or object with this length
 }
 
 type DurationSpec struct {
@@ -52,6 +59,9 @@ const (
 	KindJSONExists      AssertionKind = "json.exists"
 	KindJSONEquals      AssertionKind = "json.equals"
 	KindJSONContains    AssertionKind = "json.contains"
+	KindJSONSchema      AssertionKind = "json.schema"
+	KindJSONMatches     AssertionKind = "json.matches"
+	KindJSONLength      AssertionKind = "json.length"
 	KindDurationLess    AssertionKind = "duration.less_than"
 )
 

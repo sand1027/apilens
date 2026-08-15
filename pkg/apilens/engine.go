@@ -148,6 +148,16 @@ type Engine interface {
 	// PersistCurrentEnv writes the current selection to
 	// .apilens/.current-env. Only `apilens env use` calls this.
 	PersistCurrentEnv() error
+
+	// SpecExport writes an OpenAPI 3 document built from the registry plus
+	// captured exchange examples (plan.md v7: "OpenAPI generation from
+	// registry + captures"). Returns the path actually written.
+	SpecExport(opts SpecExportOptions) (string, error)
+	// ContractTest validates captured (and, if opts.Live, live-probed)
+	// responses against the response schemas declared by the OpenAPI
+	// document at opts.SpecPath (plan.md v7: "Contract testing against a
+	// stored spec").
+	ContractTest(ctx context.Context, opts ContractTestOptions) (*Report, error)
 }
 
 // EndpointFilter mirrors registry.Filter (docs/04-interfaces.md section 3).
@@ -181,6 +191,20 @@ type GeneratedTest struct {
 	Path    string
 	Content []byte
 	Test    domain.TestCase
+}
+
+// SpecExportOptions configures Engine.SpecExport (v7).
+type SpecExportOptions struct {
+	Out     string
+	Force   bool
+	Title   string
+	Version string
+}
+
+// ContractTestOptions configures Engine.ContractTest (v7).
+type ContractTestOptions struct {
+	SpecPath string
+	Live     bool
 }
 
 // engine is the concrete Engine implementation, composing internal/app
@@ -348,4 +372,21 @@ func (e *engine) CurrentEnv() domain.Environment {
 
 func (e *engine) PersistCurrentEnv() error {
 	return e.app.PersistCurrentEnv()
+}
+
+func (e *engine) SpecExport(opts SpecExportOptions) (string, error) {
+	return e.app.SpecExport(app.SpecExportOptions{
+		Out:     opts.Out,
+		Force:   opts.Force,
+		Title:   opts.Title,
+		Version: opts.Version,
+	})
+}
+
+func (e *engine) ContractTest(ctx context.Context, opts ContractTestOptions) (*Report, error) {
+	report, err := e.app.ContractTest(ctx, app.ContractTestOptions{SpecPath: opts.SpecPath, Live: opts.Live})
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
 }
