@@ -28,11 +28,13 @@ func NewHost() *Host {
 	}
 }
 
-// RegisterBuiltins registers every v1 built-in plugin: terminal + json
-// reporters, and bearer/basic/apikey/cookie auth schemes
-// (docs/03-plugins.md section 8).
-func RegisterBuiltins(h *Host, terminalRep, jsonRep reporter.Reporter) {
+// RegisterBuiltins registers every built-in plugin: terminal, json, and
+// junit reporters (docs/03-plugins.md section 8, plan.md v5 adds junit to
+// the Phase 1 terminal/json pair), and bearer/basic/apikey/cookie auth
+// schemes.
+func RegisterBuiltins(h *Host, terminalRep, jsonRep, junitRep reporter.Reporter) {
 	h.Reporters.Register(terminalRep)
 	h.Reporters.Register(jsonRep)
+	h.Reporters.Register(junitRep)
 	auth.RegisterBuiltins(h.Auth)
 }

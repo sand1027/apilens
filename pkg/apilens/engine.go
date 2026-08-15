@@ -264,6 +264,14 @@ func (e *engine) Run(ctx context.Context, filter RunFilter) (*Report, error) {
 	if !ok {
 		return nil, domain.NewConfigError("unknown reporter format \""+format+"\"", nil)
 	}
+	if filter.Quiet {
+		// Only the terminal reporter has per-test noise to suppress;
+		// json/junit already buffer and emit once regardless
+		// (docs/05-cli.md --quiet: "Errors only").
+		if quieter, ok := rep.(interface{ SetQuiet(bool) }); ok {
+			quieter.SetQuiet(true)
+		}
+	}
 	report, err := e.app.RunSuite(ctx, filter, rep)
 	if err != nil {
 		return nil, err

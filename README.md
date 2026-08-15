@@ -6,12 +6,12 @@ The CLI is the primary interface. A web dashboard comes later and will use the *
 
 ## Status
 
-**v1 (Runner) through v4 (Replay) have shipped.** You can `apilens init`,
+**v1 (Runner) through v5 (CI) have shipped.** You can `apilens init`,
 write YAML tests, `apilens run` them, `apilens discover` OpenAPI specs or
 Express routes into a registry, `apilens watch` a local proxy to see the
-APIs your app actually calls, and turn a captured call into a saved test
-with `apilens generate` — the "watch → replay → generate → run" loop
-described below now works end to end.
+APIs your app actually calls, turn a captured call into a saved test with
+`apilens generate`, and wire the whole thing into CI with `--format junit`
+and `--quiet` — see [.github/workflows/apilens-example.yml](.github/workflows/apilens-example.yml).
 
 - Product releases: [plan.md](plan.md)
 - Architecture pack: [docs/README.md](docs/README.md)
@@ -46,13 +46,13 @@ Application → Discover → Registry → Watch → Capture → Inspect → Repl
 
 ## CLI
 
-Shipped (v1 + v2 + v3 + v4):
+Shipped (v1 through v5):
 
 ```text
 apilens init
 apilens version
 apilens env list|use|show
-apilens run [--filter --method --tag --sequential --parallel --fail-fast --format]
+apilens run [--filter --method --tag --sequential --parallel --fail-fast --format --quiet]
 apilens test <ref> [--method]
 apilens discover [--source] [--path] [--verbose]
 apilens list [--method] [--tag]
@@ -61,6 +61,13 @@ apilens watch [--bind] [--port] [--allow-remote] [--upstream] [--filter] [--host
 apilens history list [--limit] / apilens history show <id> [--verbose]
 apilens replay <id> [--method] [--url] [--header] [--unset] [--query]
 apilens generate <id> [--out] [--force]
+```
+
+`--format` accepts `terminal`, `json`, or `junit` on `run`/`test`. CI
+example:
+
+```bash
+apilens run --format junit --quiet > junit.xml
 ```
 
 Try the full watch → generate → run loop against the bundled fixture API:
@@ -75,10 +82,10 @@ apilens generate 1          # writes .apilens/tests/generated/get-health.yaml
 apilens run                 # runs it, exit 0
 ```
 
-Planned for v5+ (not yet implemented — return `ErrNotImplemented`):
+Planned for v6+ (not yet implemented):
 
 ```text
-apilens run --format junit
+apilens ui
 ```
 
 ## Documentation

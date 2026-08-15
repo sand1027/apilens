@@ -12,7 +12,8 @@ import (
 // docs/05-cli.md section 3 ("apilens run" sample output). It writes
 // incrementally as each test finishes (docs/04-interfaces.md section 9).
 type TerminalReporter struct {
-	out io.Writer
+	out   io.Writer
+	quiet bool
 }
 
 // NewTerminal builds a TerminalReporter writing to w (os.Stdout in the CLI).
@@ -21,6 +22,15 @@ func NewTerminal(w io.Writer) *TerminalReporter {
 		w = os.Stdout
 	}
 	return &TerminalReporter{out: w}
+}
+
+// SetQuiet implements docs/05-cli.md's global `--quiet` flag ("Errors
+// only"): passing/skipped test lines are suppressed, only failed/errored
+// tests print, and the final summary always prints so CI logs still show
+// counts and the exit-code reason (docs/10-plan.md section 7:
+// "--quiet / machine-friendly logs").
+func (t *TerminalReporter) SetQuiet(quiet bool) {
+	t.quiet = quiet
 }
 
 func (t *TerminalReporter) Name() string      { return "terminal" }
@@ -32,6 +42,9 @@ func (t *TerminalReporter) Start(meta domain.SuiteMeta) {
 }
 
 func (t *TerminalReporter) TestFinished(result domain.TestResult) {
+	if t.quiet && result.Status != domain.StatusFailed && result.Status != domain.StatusErrored {
+		return
+	}
 	mark := statusMark(result.Status)
 	fmt.Fprintf(t.out, "%s %-6s %-24s %-6d %dms\n",
 		mark, result.Method, result.URL, result.HTTPStatus, result.DurationMS)
