@@ -263,9 +263,70 @@ API relationships, per plan.md v8:
   response where no capture existed), and produced a correct dependency
   graph and page map from real proxied `apilens watch` traffic
 
-## v9 — Scale
+## v9 — Scale (2026-08-15)
 
-Not shipped. Load, recording, DSL v2 chaining, optional AI generate.
+Shipped. Tests can chain, ApiLens can generate more of them, and the same
+runner can apply bounded load — per plan.md v9. AI-assisted generation was
+scoped out of this release (no API key infrastructure to send content to
+an external model, and plan.md requires it be strictly opt-in — better to
+ship it deliberately later than half-build it now).
+
+- **DSL v2 response chaining** — a test can set `id: <name>` under
+  `version: 2` so a *later* test in the same suite can reference its
+  response via `{{responses.<id>.status}}` / `.headers.<name>` /
+  `.body[.<dotted.path>]`. Chaining syntax or an `id` field under
+  `version: 1` (implicit or explicit) is a **config error caught at
+  Compile time**, per docs/06-test-dsl.md section 11's explicit rule that
+  chaining must be "a later DSL version, not a silent v1 add-on."
+  `internal/environment.Resolver` gained a mutex-protected response
+  store; `app.RunSuite` rejects duplicate test `id`s within a suite and
+  **silently forces sequential execution** whenever any test in the
+  filtered set uses chaining — chaining a response from test A into test
+  B is fundamentally incompatible with unordered parallel execution
+- **Load / soak mode** — `apilens run --load [--duration] [--iterations]
+  [--workers]` repeats the matched tests across concurrent workers and
+  reports latency percentiles (p50/p90/p95/p99) and error rate instead of
+  pass/fail (`internal/loadtest`), reusing the exact same
+  runner/environment/assertion stack a normal run uses. Chained tests are
+  rejected from load mode (repeating a chained flow concurrently would
+  race on the response store in ways the sequential-run guarantee
+  doesn't cover)
+- **Test recording sessions** — `apilens record` turns the current
+  history (from `apilens watch`) into a chained DSL v2 suite on disk
+  (`internal/recording`). Correlation between steps is strictly
+  literal-value-match — a later step's URL segment or JSON body value is
+  only rewritten into a `{{responses...}}` reference when it exactly
+  matches a value actually seen in an earlier step's response, never a
+  guess
+- **Database assertions (opt-in plugin)** — `assert.db.<connection>`
+  blocks (`query`, plus `row_count_equals` / `exists` / `equals`) let a
+  test confirm an HTTP call actually persisted (or didn't persist) to a
+  real database. Opt-in twice over: no connection exists until
+  `db.connections.<name>` is configured in `config.yaml`, and every query
+  is validated **read-only at Compile time** — any mutating SQL keyword
+  is rejected before a connection even opens. Ships with sqlite
+  (`modernc.org/sqlite`, pure Go, no CGO) and postgres (`jackc/pgx`)
+  drivers; DSNs are credentials and are expanded from `${ENV}` lazily,
+  same fail-closed discipline as environment file variables
+- **Automatic test generation from OpenAPI examples** — `apilens spec
+  generate --from <path>` reads a stored OpenAPI document (the same
+  parse+validate path `contract test` already uses) and writes one YAML
+  v1 test per operation that declares a usable example value. An
+  operation with a required request body or path parameter but no
+  example anywhere is skipped, not padded with an invented value
+- ~110 new unit tests across `internal/environment`, `internal/testdef`,
+  `internal/app`, `internal/loadtest`, `internal/recording`,
+  `internal/dbassert`, `internal/assertions`, and `internal/openapigen`
+- Verified end-to-end with real built binaries: a login→fetch-created-user
+  chained suite actually chaining a freshly-created id through two real
+  HTTP calls; `--load --iterations 200` and `--load --duration 1s`
+  against a real server (42,635 real requests in one run, catching real
+  errors under load); a real `apilens watch` → `apilens record` →
+  `apilens run` loop turning genuine captured traffic into a passing
+  chained suite; a real sqlite-backed fixture server where `db.main.
+  exists: true` correctly passed after a real INSERT and failed for a
+  nonexistent row; `apilens spec generate` producing 4 passing tests from
+  a hand-written spec's examples against the fixture server
 
 ## v10 — Team
 

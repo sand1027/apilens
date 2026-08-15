@@ -6,10 +6,12 @@ package apilens
 
 import (
 	"context"
+	"time"
 
 	"github.com/sandeepv/apilens/internal/app"
 	"github.com/sandeepv/apilens/internal/domain"
 	"github.com/sandeepv/apilens/internal/generate"
+	"github.com/sandeepv/apilens/internal/loadtest"
 	"github.com/sandeepv/apilens/internal/project"
 	"github.com/sandeepv/apilens/internal/registry"
 	"github.com/sandeepv/apilens/internal/replay"
@@ -167,6 +169,22 @@ type Engine interface {
 	// best-effort signal, not ground truth — see internal/pagemap's
 	// package doc / docs/11-risks-and-gaps.md G19.
 	PageMap() []PageMapping
+
+	// RunLoad repeats the filtered test set across concurrent workers for
+	// a bounded duration or iteration count, reporting latency
+	// percentiles and error rate rather than pass/fail (plan.md v9:
+	// "Load / soak mode on the same runner"). DSL v2 chained tests are
+	// rejected — see internal/loadtest's package doc.
+	RunLoad(ctx context.Context, filter RunFilter, opts LoadOptions) (*LoadReport, error)
+
+	// Record turns the current history into a chained DSL v2 suite on
+	// disk (plan.md v9: "Test recording sessions").
+	Record(opts RecordOptions) (RecordResult, error)
+
+	// GenerateFromSpec writes one YAML v1 test per OpenAPI operation that
+	// declares a usable example (plan.md v9: "Automatic test generation
+	// from OpenAPI examples").
+	GenerateFromSpec(opts GenerateFromSpecOptions) (GenerateFromSpecResult, error)
 	// Mock starts a local mock server serving canned responses built from
 	// the registry and captured examples (plan.md v8: "API mocking
 	// (apilens mock) using registry + captured examples"). Mirrors
@@ -255,6 +273,49 @@ type MockOptions struct {
 // MockSession is returned by Engine.Mock: the address actually bound.
 type MockSession struct {
 	Addr string
+}
+
+// LoadOptions configures Engine.RunLoad (v9). Mirrors internal/loadtest's
+// own Options — re-exported so callers don't need internal/loadtest.
+type LoadOptions struct {
+	Duration   time.Duration
+	Iterations int
+	Workers    int
+	Timeout    time.Duration
+}
+
+// Percentiles/TestStats/LoadReport mirror internal/loadtest's Report
+// shape (v9) — a repeated-execution report, deliberately distinct from
+// Report (which is pass/fail-oriented).
+type Percentiles = loadtest.Percentiles
+type TestStats = loadtest.TestStats
+type LoadReport = loadtest.Report
+
+// RecordOptions configures Engine.Record (v9).
+type RecordOptions struct {
+	Limit int
+	Out   string
+	Force bool
+}
+
+// RecordResult mirrors internal/app.RecordResult (v9).
+type RecordResult struct {
+	Files []string
+	Steps int
+}
+
+// GenerateFromSpecOptions configures Engine.GenerateFromSpec (v9).
+type GenerateFromSpecOptions struct {
+	SpecPath string
+	Out      string
+	Force    bool
+}
+
+// GenerateFromSpecResult mirrors internal/app.GenerateFromSpecResult (v9).
+type GenerateFromSpecResult struct {
+	Files    []string
+	Skipped  int
+	Compiled int
 }
 
 // APICall/PageMapping mirror internal/pagemap's types (v8).
@@ -479,6 +540,35 @@ func (e *engine) Mock(ctx context.Context, opts MockOptions) (*MockSession, erro
 		return nil, err
 	}
 	return &MockSession{Addr: handle.Addr}, nil
+}
+
+func (e *engine) RunLoad(ctx context.Context, filter RunFilter, opts LoadOptions) (*LoadReport, error) {
+	report, err := e.app.RunLoad(ctx, filter, app.LoadOptions{
+		Duration:   opts.Duration,
+		Iterations: opts.Iterations,
+		Workers:    opts.Workers,
+		Timeout:    opts.Timeout,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &report, nil
+}
+
+func (e *engine) Record(opts RecordOptions) (RecordResult, error) {
+	res, err := e.app.Record(app.RecordOptions{Limit: opts.Limit, Out: opts.Out, Force: opts.Force})
+	if err != nil {
+		return RecordResult{}, err
+	}
+	return RecordResult{Files: res.Files, Steps: res.Steps}, nil
+}
+
+func (e *engine) GenerateFromSpec(opts GenerateFromSpecOptions) (GenerateFromSpecResult, error) {
+	res, err := e.app.GenerateFromSpec(app.GenerateFromSpecOptions{SpecPath: opts.SpecPath, Out: opts.Out, Force: opts.Force})
+	if err != nil {
+		return GenerateFromSpecResult{}, err
+	}
+	return GenerateFromSpecResult{Files: res.Files, Skipped: res.Skipped, Compiled: res.Compiled}, nil
 }
 
 func (e *engine) PageMap() []PageMapping {

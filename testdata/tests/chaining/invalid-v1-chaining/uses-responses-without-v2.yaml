@@ -1,0 +1,8 @@
+name: Uses Chaining Without Version 2
+description: Must fail to compile — {{responses....}} syntax requires "version: 2"
+request:
+  method: GET
+  url: "{{base_url}}/api/users/{{responses.login.body.data.id}}"
+assert:
+  status:
+    equals: 200

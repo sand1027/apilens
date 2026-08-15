@@ -1,0 +1,16 @@
+version: 2
+id: fetch-created-user
+name: Fetch Created User
+description: DSL v2 chaining fixture — reads the id created by 01-login.yaml's response
+tags: [chaining]
+
+request:
+  method: GET
+  url: "{{base_url}}/api/users/{{responses.login.body.data.id}}"
+
+assert:
+  status:
+    equals: 200
+  json:
+    data.name:
+      equals: chained-user

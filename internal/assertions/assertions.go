@@ -11,19 +11,45 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sandeepv/apilens/internal/dbassert"
 	"github.com/sandeepv/apilens/internal/domain"
 )
 
 // Engine implements docs/04-interfaces.md section 7's Engine interface.
-type Engine struct{}
+// dbRegistry is nil unless a caller opts in via WithDBRegistry — most
+// Engine instances never touch a database at all (plan.md v9's db.*
+// assertions are opt-in, not core).
+type Engine struct {
+	dbRegistry *dbassert.Registry
+}
 
-// New builds an assertions Engine. There is no state; MVP assertion kinds
-// are all built into this package rather than plugin-registered (they are
-// core, not swappable — docs/03-plugins.md section 10 lists reasons a
-// feature stays core, and consistent pass/fail semantics is one of them.
-// The Evaluator/Check port below still exists for future plugin kinds like
-// schema/regex, per docs/03-plugins.md section 6).
-func New() *Engine { return &Engine{} }
+// Option configures New.
+type Option func(*Engine)
+
+// WithDBRegistry enables db.* assertions (plan.md v9: "Database
+// assertions (opt-in plugin)") by giving the Engine a configured
+// dbassert.Registry to query against. Without this option, any db.*
+// assertion in a test file is a config error at Compile time — the
+// engine has no connections to query and says so explicitly rather than
+// silently skipping the check.
+func WithDBRegistry(reg *dbassert.Registry) Option {
+	return func(e *Engine) { e.dbRegistry = reg }
+}
+
+// New builds an assertions Engine. Built-in kinds (status/header/body/
+// json/duration) need no state and are always available; db.* checks
+// need an opted-in dbassert.Registry (docs/03-plugins.md section 10 lists
+// reasons a feature stays core vs. plugin — connection lifecycle and an
+// external credential requirement are exactly the kind of thing that
+// stays optional). The Evaluator/Check port below still exists for
+// future plugin kinds, per docs/03-plugins.md section 6.
+func New(opts ...Option) *Engine {
+	e := &Engine{}
+	for _, o := range opts {
+		o(e)
+	}
+	return e
+}
 
 // Compile turns a validated AssertionSpec into an executable AssertionSet.
 func (e *Engine) Compile(spec domain.AssertionSpec) (domain.AssertionSet, error) {
@@ -92,6 +118,23 @@ func (e *Engine) Compile(spec domain.AssertionSpec) (domain.AssertionSet, error)
 
 	if spec.Duration != nil && spec.Duration.LessThan != nil {
 		checks = append(checks, durationLessThanCheck{wantMS: *spec.Duration.LessThan})
+	}
+
+	for connName, d := range spec.DB {
+		if err := dbassert.ValidateReadOnly(d.Query); err != nil {
+			return domain.AssertionSet{}, domain.NewConfigError(
+				fmt.Sprintf("compiling db.%s", connName), err)
+		}
+		if e.dbRegistry == nil {
+			return domain.AssertionSet{}, domain.NewConfigError(
+				fmt.Sprintf("db.%s used but no db connections are configured — add db.connections.%s to config.yaml", connName, connName), nil)
+		}
+		check, err := newDBCheck(connName, d, e.dbRegistry)
+		if err != nil {
+			return domain.AssertionSet{}, domain.NewConfigError(
+				fmt.Sprintf("compiling db.%s", connName), err)
+		}
+		checks = append(checks, check)
 	}
 
 	if len(checks) == 0 {

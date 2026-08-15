@@ -63,6 +63,7 @@ func NewRootCommand() *cobra.Command {
 		newContractCommand(flags),
 		newMockCommand(flags),
 		newGraphCommand(flags),
+		newRecordCommand(flags),
 	)
 
 	return root

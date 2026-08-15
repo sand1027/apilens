@@ -54,6 +54,25 @@ type TestCase struct {
 	Assert      AssertionSpec
 	Timeout     time.Duration // effective per-test timeout after defaults
 	Retries     int
+
+	// Version is the DSL version this test was written against (1 or 2).
+	// Files with no explicit "version:" field are treated as 1
+	// (docs/06-test-dsl.md section 1). Version 2 is required to use
+	// response chaining ({{responses.<id>...}}) — plan.md v9 / DSL v2.
+	Version int
+	// ID names this test so a LATER test in the same suite can reference
+	// its response via {{responses.<ID>...}}. Optional — most tests never
+	// need one. Must be unique within a suite when set (enforced by
+	// app.RunSuite, since uniqueness is a suite-wide property, not a
+	// per-file one).
+	ID string
+	// UsesChaining is true if this test's own request template contains a
+	// {{responses....}} reference. testrunner/app use this to force
+	// sequential execution for suites that need it — chaining a response
+	// from test A into test B requires A to have already run
+	// (docs/11-risks-and-gaps.md R6: chaining is incompatible with
+	// unordered parallel execution).
+	UsesChaining bool
 }
 
 // HasTag reports whether the test case carries the given tag (case-sensitive,

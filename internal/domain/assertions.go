@@ -9,6 +9,28 @@ type AssertionSpec struct {
 	Body     *BodySpec
 	JSON     map[string]JSONSpec // key = dotted path
 	Duration *DurationSpec
+	// DB is a v9 addition (plan.md v9: "Database assertions (opt-in
+	// plugin)") — keyed by the connection name configured under
+	// db.connections in config.yaml.
+	DB map[string]DBSpec
+}
+
+// DBSpec is one db.<connection> assertion block (plan.md v9). Exactly one
+// of RowCountEquals / Exists / Equals should be set per query — testdef
+// does not enforce mutual exclusion here since a single query result can
+// reasonably be checked more than one way (e.g. both "exists" and an
+// "equals" on a specific column), but at least Query must always be set.
+type DBSpec struct {
+	Query string
+	Args  []any
+	// RowCountEquals asserts the query returns exactly this many rows.
+	RowCountEquals *int
+	// Exists asserts the query returns at least one row (true) or none
+	// (false).
+	Exists *bool
+	// Equals asserts the first column of the first row, formatted as a
+	// string, equals this value's string form.
+	Equals any
 }
 
 type StatusSpec struct {
@@ -63,6 +85,9 @@ const (
 	KindJSONMatches     AssertionKind = "json.matches"
 	KindJSONLength      AssertionKind = "json.length"
 	KindDurationLess    AssertionKind = "duration.less_than"
+	KindDBRowCount      AssertionKind = "db.row_count_equals"
+	KindDBExists        AssertionKind = "db.exists"
+	KindDBEquals        AssertionKind = "db.equals"
 )
 
 // AssertionResult is the outcome of evaluating a single compiled check

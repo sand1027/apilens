@@ -15,7 +15,47 @@ func newSpecCommand(flags *globalFlags) *cobra.Command {
 		Use:   "spec",
 		Short: "Work with OpenAPI documents generated from the registry",
 	}
-	cmd.AddCommand(newSpecExportCommand(flags))
+	cmd.AddCommand(newSpecExportCommand(flags), newSpecGenerateCommand(flags))
+	return cmd
+}
+
+// newSpecGenerateCommand implements plan.md v9's "Automatic test
+// generation from OpenAPI examples (now that v7 contracts exist)":
+// write one YAML v1 test per operation in a stored spec that declares a
+// usable example.
+func newSpecGenerateCommand(flags *globalFlags) *cobra.Command {
+	var (
+		specPath string
+		out      string
+		force    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate YAML tests from a stored OpenAPI spec's examples",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eng, err := newEngine(flags)
+			if err != nil {
+				return err
+			}
+			res, err := eng.GenerateFromSpec(apilens.GenerateFromSpecOptions{
+				SpecPath: specPath, Out: out, Force: force,
+			})
+			if err != nil {
+				return err
+			}
+			w := cmd.OutOrStdout()
+			fmt.Fprintf(w, "Generated %d of %d operation(s) (%d skipped — no usable example):\n",
+				len(res.Files), res.Compiled, res.Skipped)
+			for _, f := range res.Files {
+				fmt.Fprintln(w, "  "+f)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&specPath, "from", "", "Path to the OpenAPI document to generate from (required)")
+	cmd.Flags().StringVar(&out, "out", "", "Output directory (default .apilens/tests/generated)")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing generated test files")
 	return cmd
 }
 

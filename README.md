@@ -6,7 +6,7 @@ The CLI is the primary interface. A web dashboard comes later and will use the *
 
 ## Status
 
-**v1 (Runner) through v8 (Platforms) have shipped.** You can `apilens
+**v1 (Runner) through v9 (Scale) have shipped.** You can `apilens
 init`, write YAML tests, `apilens run` them, `apilens discover` OpenAPI
 specs or routes from Express/Fastify/NestJS/Gin/Fiber/Echo into a
 registry, `apilens watch` a local proxy to see the APIs your app actually
@@ -16,8 +16,13 @@ all of it from a local browser dashboard with `apilens ui`, assert on
 response shape with JSON Schema/regex/length checks, export the registry
 to a real OpenAPI document with `apilens spec export`, check live or
 captured responses against that document with `apilens contract test`,
-serve mock responses with `apilens mock`, and get an inferred API
-dependency graph or page-to-API map from captured traffic.
+serve mock responses with `apilens mock`, get an inferred API dependency
+graph or page-to-API map from captured traffic, chain tests together with
+DSL v2 response references, turn a whole watch session into a chained
+suite with `apilens record`, apply bounded load with `apilens run --load`,
+assert on real database state with opt-in `db.*` checks, and generate
+tests straight from an OpenAPI spec's examples with `apilens spec
+generate`.
 
 - Product releases: [plan.md](plan.md)
 - Architecture pack: [docs/README.md](docs/README.md)
@@ -52,13 +57,14 @@ Application → Discover → Registry → Watch → Capture → Inspect → Repl
 
 ## CLI
 
-Shipped (v1 through v8):
+Shipped (v1 through v9):
 
 ```text
 apilens init
 apilens version
 apilens env list|use|show
 apilens run [--filter --method --tag --sequential --parallel --fail-fast --format --quiet]
+apilens run --load [--duration] [--iterations] [--workers]
 apilens test <ref> [--method]
 apilens discover [--source] [--path] [--verbose]
 apilens list [--method] [--tag]
@@ -68,8 +74,10 @@ apilens history list [--limit] / apilens history show <id> [--verbose]
 apilens history pagemap
 apilens replay <id> [--method] [--url] [--header] [--unset] [--query]
 apilens generate <id> [--out] [--force]
+apilens record [--limit] [--out] [--force]
 apilens ui [--bind] [--port] [--allow-remote]
 apilens spec export [--out] [--force] [--title] [--spec-version]
+apilens spec generate --from <path> [--out] [--force]
 apilens contract test --spec <path> [--live]
 apilens mock [--bind] [--port] [--allow-remote]
 apilens graph [--window-ms]
@@ -139,10 +147,71 @@ apilens graph                  # inferred dependency graph from time-proximity i
 apilens history pagemap        # captured calls grouped by the page (Referer) that triggered them
 ```
 
-Planned for v9+ (not yet implemented):
+Chain tests together (DSL v2), record a whole flow, apply load, and check
+real database state after a call:
+
+```yaml
+# .apilens/tests/login.yaml
+version: 2
+id: login
+name: Login
+request:
+  method: POST
+  url: "{{base_url}}/api/login"
+  body:
+    json: { email: a@example.com, password: "{{password}}" }
+assert:
+  status: { equals: 200 }
+---
+# .apilens/tests/profile.yaml
+version: 2
+name: Get Profile
+request:
+  method: GET
+  url: "{{base_url}}/api/me"
+  headers:
+    Authorization: "Bearer {{responses.login.body.token}}"
+assert:
+  status: { equals: 200 }
+```
+
+```bash
+apilens watch --port 8888     # capture a real login-then-profile flow
+apilens record                # turn it into a chained suite under .apilens/tests/recorded
+apilens run                   # chained suites run sequentially, automatically
+
+apilens run --load --duration 30s --workers 20   # bounded load pass with p50/p95/p99
+```
+
+```yaml
+# config.yaml
+db:
+  connections:
+    main: { driver: sqlite, dsn: "${DATABASE_URL}" }
+```
+
+```yaml
+assert:
+  status: { equals: 201 }
+  db:
+    main:
+      query: "SELECT * FROM users WHERE email = 'a@example.com'"
+      exists: true
+```
+
+Generate tests straight from an OpenAPI spec's own examples — no traffic
+needed:
+
+```bash
+apilens spec generate --from api/openapi.yaml
+```
+
+Planned for v10+ (not yet implemented, and needs real infra decisions
+before it can be built — hosting, auth, and secret storage for remote
+workers/a cloud dashboard):
 
 ```text
-apilens run --load   # load/soak mode on the same runner
+apilens ci report --remote   # team collaboration, remote workers, cloud dashboard
 ```
 
 ## Documentation

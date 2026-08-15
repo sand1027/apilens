@@ -1,0 +1,8 @@
+id: named
+name: ID Field Under Version 1
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  status:
+    equals: 200
