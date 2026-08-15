@@ -158,6 +158,21 @@ type Engine interface {
 	// document at opts.SpecPath (plan.md v7: "Contract testing against a
 	// stored spec").
 	ContractTest(ctx context.Context, opts ContractTestOptions) (*Report, error)
+
+	// Graph builds an inferred API dependency graph from captured traffic
+	// (plan.md v8: "API dependency graphs").
+	Graph(opts GraphOptions) Graph
+	// PageMap groups captured traffic by the Referer header of the page
+	// that triggered it (plan.md v8: "Page-to-API mapping"). This is a
+	// best-effort signal, not ground truth — see internal/pagemap's
+	// package doc / docs/11-risks-and-gaps.md G19.
+	PageMap() []PageMapping
+	// Mock starts a local mock server serving canned responses built from
+	// the registry and captured examples (plan.md v8: "API mocking
+	// (apilens mock) using registry + captured examples"). Mirrors
+	// Watch's shape: it enforces the same loopback bind policy and blocks
+	// internally until ctx is canceled.
+	Mock(ctx context.Context, opts MockOptions) (*MockSession, error)
 }
 
 // EndpointFilter mirrors registry.Filter (docs/04-interfaces.md section 3).
@@ -205,6 +220,53 @@ type SpecExportOptions struct {
 type ContractTestOptions struct {
 	SpecPath string
 	Live     bool
+}
+
+// GraphOptions configures Engine.Graph (v8).
+type GraphOptions struct {
+	WindowMS int
+}
+
+// GraphNode/GraphEdge/Graph mirror internal/graph's types (v8), re-exported
+// so callers don't need internal/graph either.
+type GraphNode struct {
+	Method string
+	Path   string
+}
+
+type GraphEdge struct {
+	From   GraphNode
+	To     GraphNode
+	Weight int
+}
+
+type Graph struct {
+	Nodes []GraphNode
+	Edges []GraphEdge
+}
+
+// MockOptions configures Engine.Mock (v8).
+type MockOptions struct {
+	Bind        string
+	Port        int
+	AllowRemote bool
+}
+
+// MockSession is returned by Engine.Mock: the address actually bound.
+type MockSession struct {
+	Addr string
+}
+
+// APICall/PageMapping mirror internal/pagemap's types (v8).
+type APICall struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Count  int    `json:"count"`
+}
+
+type PageMapping struct {
+	Page  string    `json:"page"`
+	Calls []APICall `json:"calls"`
 }
 
 // engine is the concrete Engine implementation, composing internal/app
@@ -389,4 +451,45 @@ func (e *engine) ContractTest(ctx context.Context, opts ContractTestOptions) (*R
 		return nil, err
 	}
 	return &report, nil
+}
+
+func (e *engine) Graph(opts GraphOptions) Graph {
+	g := e.app.Graph(app.GraphOptions{WindowMS: opts.WindowMS})
+	out := Graph{}
+	for _, n := range g.Nodes {
+		out.Nodes = append(out.Nodes, GraphNode{Method: string(n.Method), Path: n.Path})
+	}
+	for _, ed := range g.Edges {
+		out.Edges = append(out.Edges, GraphEdge{
+			From:   GraphNode{Method: string(ed.From.Method), Path: ed.From.Path},
+			To:     GraphNode{Method: string(ed.To.Method), Path: ed.To.Path},
+			Weight: ed.Weight,
+		})
+	}
+	return out
+}
+
+func (e *engine) Mock(ctx context.Context, opts MockOptions) (*MockSession, error) {
+	handle, err := e.app.Mock(ctx, app.MockOptions{
+		Bind:        opts.Bind,
+		Port:        opts.Port,
+		AllowRemote: opts.AllowRemote,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &MockSession{Addr: handle.Addr}, nil
+}
+
+func (e *engine) PageMap() []PageMapping {
+	mappings := e.app.PageMap()
+	out := make([]PageMapping, 0, len(mappings))
+	for _, m := range mappings {
+		pm := PageMapping{Page: m.Page}
+		for _, c := range m.Calls {
+			pm.Calls = append(pm.Calls, APICall{Method: string(c.Method), Path: c.Path, Count: c.Count})
+		}
+		out = append(out, pm)
+	}
+	return out
 }

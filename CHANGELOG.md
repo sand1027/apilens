@@ -212,9 +212,56 @@ captures/registry can become a reviewable OpenAPI spec, per plan.md v7:
   endpoint matching its schema while failing another whose response is
   missing a field the spec requires — exit code `1`, clear diagnostic
 
-## v8 — Platforms
+## v8 — Platforms (2026-08-15)
 
-Not shipped. More frameworks, mocks, API graphs.
+Shipped. Discovery works on more stacks; teams can mock and see (inferred)
+API relationships, per plan.md v8:
+
+- Five new discovery providers, each a conservative source-tree scan
+  (never executes user code, never invents an endpoint not literally
+  present in source):
+  - `gin`, `fiber`, `echo` — Go source, detected via `go.mod`, resolving
+    nested router-group prefixes (`r.Group("/api").Group("/users")`) the
+    same way `express` resolves `router.use` mounts
+  - `fastify` — JS/TS, detected via `package.json`, handles both the
+    `.get('/path', ...)` call form and the `.route({ method, url })`
+    object form
+  - `nestjs` — TypeScript decorators (`@Controller('/prefix')` classes,
+    `@Get()`/`@Post()`/etc methods), not call-expression scanning; a
+    decorated method on a class without `@Controller()` is never treated
+    as a route
+  - All five are opt-in in `config.yaml` (`discovery.<name>.enabled`),
+    same policy as `express` since day one
+- `internal/discovery`: shared `WalkSourceFiles`/`JoinURLPath` helpers so
+  the new providers don't duplicate directory-walk logic; extended the
+  orchestrator's source-priority table
+- Discover-time tag/ignore filters (`discovery.ignore` / `discovery.tags`
+  in `config.yaml`): glob patterns that drop or tag endpoints the moment
+  they're discovered, so `apilens list --tag` and generated tests inherit
+  grouping without every test author repeating it by hand
+- `apilens mock` — a local mock server (loopback-only, same bind policy
+  as `watch`/`ui`) that answers from the registry: the most recent
+  captured exchange for an endpoint is replayed verbatim when available,
+  otherwise a minimal synthesized response (never invented field values)
+- `apilens graph` — an inferred API dependency graph built from
+  time-proximity clustering of captured traffic (`internal/graph`).
+  Explicitly presented as a hint, not ground truth — ApiLens has no
+  access to the application's real call graph
+- `apilens history pagemap` — groups captured calls by the Referer header
+  of the page that triggered them (`internal/pagemap`). Also explicitly a
+  best-effort signal: Referer can be absent or stale, and this ships with
+  that caveat in the CLI output itself, not just the docs
+  (docs/11-risks-and-gaps.md G19)
+- ~60 new unit tests across the 5 provider packages, `internal/discovery`
+  (filters), `internal/graph`, `internal/mock`, and `internal/pagemap`
+- Verified end-to-end with a real built binary: discovered a Gin fixture
+  app with nested route groups, applied a discover-time ignore+tag
+  config and confirmed both took effect, discovered Fiber/Echo/Fastify/
+  NestJS fixtures each finding the expected routes, ran `apilens mock`
+  against a real registry+capture (verified byte-for-byte replay of a
+  captured response, 404 for unmatched routes, and a synthesized
+  response where no capture existed), and produced a correct dependency
+  graph and page map from real proxied `apilens watch` traffic
 
 ## v9 — Scale
 

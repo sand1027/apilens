@@ -1,0 +1,6 @@
+{
+  "name": "fastify-fixture",
+  "dependencies": {
+    "fastify": "^4.26.0"
+  }
+}

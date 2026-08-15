@@ -5,7 +5,12 @@ import (
 	"os"
 
 	"github.com/sandeepv/apilens/internal/discovery"
+	"github.com/sandeepv/apilens/internal/discovery/providers/echo"
 	"github.com/sandeepv/apilens/internal/discovery/providers/express"
+	"github.com/sandeepv/apilens/internal/discovery/providers/fastify"
+	"github.com/sandeepv/apilens/internal/discovery/providers/fiber"
+	"github.com/sandeepv/apilens/internal/discovery/providers/gin"
+	"github.com/sandeepv/apilens/internal/discovery/providers/nestjs"
 	"github.com/sandeepv/apilens/internal/discovery/providers/openapi"
 	"github.com/sandeepv/apilens/internal/domain"
 	"github.com/sandeepv/apilens/internal/registry"
@@ -31,18 +36,32 @@ type DiscoverResult struct {
 
 // buildOrchestrator wires the built-in providers per current config
 // (docs/03-plugins.md section 9: "Disabled plugins are registered but
-// skipped by the orchestrator").
+// skipped by the orchestrator"). Table-driven rather than one
+// if-statement per provider (v8 added 5 framework providers on top of
+// v2's openapi/express, and this shape stays flat as more are added —
+// v8's follow-up providers per plan.md, e.g. Spring/Django/ASP.NET, only
+// need one more line each here plus a DiscoveryConfig field).
 func (a *App) buildOrchestrator() *discovery.Orchestrator {
-	providers := []discovery.Provider{
-		openapi.New(a.Config.Discovery.OpenAPI.Paths),
-		express.New(),
+	entries := []struct {
+		provider discovery.Provider
+		enabled  bool
+	}{
+		{openapi.New(a.Config.Discovery.OpenAPI.Paths), a.Config.Discovery.OpenAPI.Enabled},
+		{express.New(), a.Config.Discovery.Express.Enabled},
+		{fastify.New(), a.Config.Discovery.Fastify.Enabled},
+		{nestjs.New(), a.Config.Discovery.NestJS.Enabled},
+		{gin.New(), a.Config.Discovery.Gin.Enabled},
+		{fiber.New(), a.Config.Discovery.Fiber.Enabled},
+		{echo.New(), a.Config.Discovery.Echo.Enabled},
 	}
+
+	providers := make([]discovery.Provider, 0, len(entries))
 	var disabled []string
-	if !a.Config.Discovery.OpenAPI.Enabled {
-		disabled = append(disabled, "openapi")
-	}
-	if !a.Config.Discovery.Express.Enabled {
-		disabled = append(disabled, "express")
+	for _, e := range entries {
+		providers = append(providers, e.provider)
+		if !e.enabled {
+			disabled = append(disabled, e.provider.Name())
+		}
 	}
 	return discovery.New(providers, disabled)
 }
@@ -61,6 +80,14 @@ func (a *App) Discover(ctx context.Context, opts DiscoverOptions) (DiscoverResul
 	if err != nil {
 		return DiscoverResult{}, err
 	}
+
+	// Discover-time tag/ignore filters (plan.md v8) are applied after the
+	// orchestrator's own merge, so they see the final deduped endpoint
+	// set rather than each provider's raw output.
+	endpoints = discovery.ApplyFilters(endpoints, discovery.FilterOptions{
+		Ignore: a.Config.Discovery.Ignore,
+		Tag:    a.Config.Discovery.Tags,
+	})
 
 	if err := a.Registry.Replace(endpoints); err != nil {
 		return DiscoverResult{}, domain.NewConfigError("updating registry", err)

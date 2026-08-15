@@ -37,6 +37,20 @@ discovery:
     paths: []
   express:
     enabled: false
+  fastify:
+    enabled: false
+  nestjs:
+    enabled: false
+  gin:
+    enabled: false
+  fiber:
+    enabled: false
+  echo:
+    enabled: false
+  # ignore: glob patterns (path.Match syntax) to drop from discover results
+  # tags: maps a glob pattern to a tag name applied to matching endpoints
+  ignore: []
+  tags: {}
 
 watch:
   bind: 127.0.0.1
