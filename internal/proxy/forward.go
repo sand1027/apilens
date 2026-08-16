@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"path"
 	"strings"
 	"time"
@@ -35,10 +36,13 @@ func (p *Proxy) handleForward(w http.ResponseWriter, r *http.Request) {
 	// header; the upstream never asked to know it went through us.
 	outReq.Header.Del("Proxy-Connection")
 
+	phases := &phaseTrace{}
+	outReq = outReq.WithContext(httptrace.WithClientTrace(outReq.Context(), phases.clientTrace()))
+
 	resp, err := p.client.Do(outReq)
 	if err != nil {
 		http.Error(w, "forwarding request: "+err.Error(), http.StatusBadGateway)
-		p.maybeCapture(r, reqBody, reqTruncated, nil, nil, false, start, err)
+		p.maybeCapture(r, reqBody, reqTruncated, nil, nil, false, phases.timing(start, time.Now()), err)
 		return
 	}
 	defer resp.Body.Close()
@@ -57,7 +61,7 @@ func (p *Proxy) handleForward(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	_, _ = w.Write(respBody)
 
-	p.maybeCapture(r, reqBody, reqTruncated, resp, respBody, respTruncated, start, nil)
+	p.maybeCapture(r, reqBody, reqTruncated, resp, respBody, respTruncated, phases.timing(start, time.Now()), nil)
 }
 
 // maybeCapture applies the configured Filter, redacts, and emits a
@@ -68,13 +72,12 @@ func (p *Proxy) maybeCapture(
 	r *http.Request,
 	reqBody []byte, reqTruncated bool,
 	resp *http.Response, respBody []byte, respTruncated bool,
-	start time.Time, transportErr error,
+	timing domain.Timing, transportErr error,
 ) {
 	if !p.passesFilter(r) {
 		return
 	}
 
-	end := time.Now()
 	ex := domain.Exchange{
 		Request: domain.HTTPRequest{
 			Method:  domain.NormalizeMethod(r.Method),
@@ -82,23 +85,24 @@ func (p *Proxy) maybeCapture(
 			Headers: p.opts.Redactor.Headers(r.Header),
 			Body:    p.opts.Redactor.Body(r.Header.Get("Content-Type"), reqBody),
 		},
-		Timing: domain.Timing{
-			Start:    start,
-			End:      end,
-			Duration: end.Sub(start),
-		},
-		Timestamp: start,
+		Timing:    timing,
+		Timestamp: timing.Start,
 		Redacted:  true,
 	}
 	if transportErr != nil {
 		ex.Err = transportErr
 	}
 	if resp != nil {
-		contentType := resp.Header.Get("Content-Type")
+		storeBody := decodeCapturedBody(resp.Header.Get("Content-Encoding"), respBody)
+		hdrs := resp.Header.Clone()
+		if !bytes.Equal(storeBody, respBody) {
+			hdrs.Del("Content-Encoding")
+		}
+		contentType := hdrs.Get("Content-Type")
 		ex.Response = domain.HTTPResponse{
 			StatusCode: resp.StatusCode,
-			Headers:    p.opts.Redactor.Headers(resp.Header),
-			Body:       p.opts.Redactor.Body(contentType, respBody),
+			Headers:    p.opts.Redactor.Headers(hdrs),
+			Body:       p.opts.Redactor.Body(contentType, storeBody),
 			Truncated:  respTruncated,
 		}
 	}

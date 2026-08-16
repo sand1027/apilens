@@ -44,7 +44,7 @@ func TestAppend_ThenReadAll_RoundTrips(t *testing.T) {
 		ID:       "id-1",
 		Request:  domain.HTTPRequest{Method: "GET", URL: "/api/users", Headers: h},
 		Response: domain.HTTPResponse{StatusCode: 200, Body: []byte(`{"ok":true}`)},
-		Timing:   domain.Timing{Duration: 42 * time.Millisecond},
+		Timing:   domain.Timing{Duration: 42 * time.Millisecond, Wait: 30 * time.Millisecond, Transfer: 5 * time.Millisecond},
 		Redacted: true,
 	}
 	ex2 := domain.Exchange{Display: 2, ID: "id-2", Request: domain.HTTPRequest{Method: "POST", URL: "/api/orders"}}
@@ -68,6 +68,9 @@ func TestAppend_ThenReadAll_RoundTrips(t *testing.T) {
 	}
 	if got[0].Request.Headers.Get("Authorization") != "Bearer ********" {
 		t.Errorf("expected redacted header to survive round-trip, got %q", got[0].Request.Headers.Get("Authorization"))
+	}
+	if got[0].Timing.Wait != 30*time.Millisecond || got[0].Timing.Transfer != 5*time.Millisecond {
+		t.Errorf("phase timings = %+v", got[0].Timing)
 	}
 	if got[1].Request.Method != "POST" {
 		t.Errorf("record 1 method = %q", got[1].Request.Method)

@@ -45,6 +45,9 @@ export default function RootLayout({ children }) {
 	if !strings.Contains(string(widgetSrc), "isOverlayPoll") {
 		t.Fatal("widget must hide overlay polls of apilens ui")
 	}
+	if !strings.Contains(string(widgetSrc), "HitDetail") || !strings.Contains(string(widgetSrc), "TimingBars") {
+		t.Fatal("widget must show hit detail and phase timings")
+	}
 	got, err := os.ReadFile(layoutPath)
 	if err != nil {
 		t.Fatal(err)

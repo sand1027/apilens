@@ -18,11 +18,18 @@ type HTTPRequest struct {
 	Timeout time.Duration
 }
 
-// Timing captures start/end/duration for a single HTTP exchange.
+// Timing captures start/end/duration for a single HTTP exchange, plus
+// httptrace phases (hoptrace-style) when the caller is the proxy.
 type Timing struct {
 	Start    time.Time
 	End      time.Time
 	Duration time.Duration
+	DNS      time.Duration
+	Connect  time.Duration
+	TLS      time.Duration
+	Wait     time.Duration
+	TTFB     time.Duration
+	Transfer time.Duration
 }
 
 // HTTPResponse is the observed result of executing an HTTPRequest.

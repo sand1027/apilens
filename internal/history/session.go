@@ -36,6 +36,12 @@ type sessionRecord struct {
 	ResponseHeaders map[string][]string `json:"response_headers,omitempty"`
 	ResponseBody    string              `json:"response_body,omitempty"`
 	DurationMS      int64               `json:"duration_ms"`
+	DNSMS           int64               `json:"dns_ms,omitempty"`
+	ConnectMS       int64               `json:"connect_ms,omitempty"`
+	TLSMS           int64               `json:"tls_ms,omitempty"`
+	WaitMS          int64               `json:"wait_ms,omitempty"`
+	TTFBMS          int64               `json:"ttfb_ms,omitempty"`
+	TransferMS      int64               `json:"transfer_ms,omitempty"`
 	Timestamp       time.Time           `json:"timestamp"`
 	Truncated       bool                `json:"truncated"`
 	Redacted        bool                `json:"redacted"`
@@ -221,6 +227,12 @@ func toRecord(ex domain.Exchange) sessionRecord {
 		StatusCode:   ex.Response.StatusCode,
 		ResponseBody: string(ex.Response.Body),
 		DurationMS:   ex.Timing.Duration.Milliseconds(),
+		DNSMS:        ex.Timing.DNS.Milliseconds(),
+		ConnectMS:    ex.Timing.Connect.Milliseconds(),
+		TLSMS:        ex.Timing.TLS.Milliseconds(),
+		WaitMS:       ex.Timing.Wait.Milliseconds(),
+		TTFBMS:       ex.Timing.TTFB.Milliseconds(),
+		TransferMS:   ex.Timing.Transfer.Milliseconds(),
 		Timestamp:    ex.Timestamp,
 		Truncated:    ex.Response.Truncated,
 		Redacted:     ex.Redacted,
@@ -253,7 +265,15 @@ func fromRecord(rec sessionRecord) domain.Exchange {
 			Body:       []byte(rec.ResponseBody),
 			Truncated:  rec.Truncated,
 		},
-		Timing:    domain.Timing{Duration: time.Duration(rec.DurationMS) * time.Millisecond},
+		Timing: domain.Timing{
+			Duration: time.Duration(rec.DurationMS) * time.Millisecond,
+			DNS:      time.Duration(rec.DNSMS) * time.Millisecond,
+			Connect:  time.Duration(rec.ConnectMS) * time.Millisecond,
+			TLS:      time.Duration(rec.TLSMS) * time.Millisecond,
+			Wait:     time.Duration(rec.WaitMS) * time.Millisecond,
+			TTFB:     time.Duration(rec.TTFBMS) * time.Millisecond,
+			Transfer: time.Duration(rec.TransferMS) * time.Millisecond,
+		},
 		Timestamp: rec.Timestamp,
 		Redacted:  rec.Redacted,
 	}
