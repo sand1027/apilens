@@ -36,7 +36,7 @@ git clone <this-repo> && cd ApiLens
 make install          # CLI → ~/.local/bin/apilens
 ```
 
-Then, in **any** project (Stance, a REST app, this repo):
+
 
 ```bash
 apilens init
@@ -56,15 +56,15 @@ AUTH_TOKEN=dev go run ../../../cmd/apilens run
 
 See [examples/fixture-server/README.md](examples/fixture-server/README.md).
 
-GraphQL (HealthFlex Stance Apollo API on `:3000`):
+
 
 ```bash
 go build -o /tmp/apilens ./cmd/apilens
-cd examples/stance-graphql
+
 /tmp/apilens run --tag public
 ```
 
-See [examples/stance-graphql/README.md](examples/stance-graphql/README.md).
+
 
 ## Intended workflow
 
