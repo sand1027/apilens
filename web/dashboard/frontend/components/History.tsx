@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, decodeBase64, flattenHeaders, formatDuration, isOverlayPoll, type Exchange } from "@/lib/api";
+import { api, ApiError, decodeBase64, flattenHeaders, formatDuration, graphqlDisplay, isOverlayPoll, type Exchange } from "@/lib/api";
 import { Button, Card, EmptyState, ErrorBanner, MethodBadge, StatusBadge } from "@/components/ui";
 
 // History tab (plan.md v6): captured exchanges from the current or last
@@ -62,7 +62,9 @@ export default function History({
           ) : (
             <table className="w-full text-sm">
               <tbody>
-                {items.map((ex) => (
+                {items.map((ex) => {
+                  const label = graphqlDisplay(ex);
+                  return (
                   <tr
                     key={ex.ID}
                     onClick={() => setSelected(ex)}
@@ -72,9 +74,9 @@ export default function History({
                   >
                     <td className="px-4 py-2 w-12 text-neutral-500 font-mono">#{ex.Display}</td>
                     <td className="px-4 py-2 w-24">
-                      <MethodBadge method={ex.Request.Method} />
+                      <MethodBadge method={label.method} />
                     </td>
-                    <td className="px-4 py-2 font-mono text-neutral-200 truncate max-w-md">{ex.Request.URL}</td>
+                    <td className="px-4 py-2 font-mono text-neutral-200 truncate max-w-md">{label.name}</td>
                     <td className="px-4 py-2 w-16">
                       <StatusBadge status={ex.Response.StatusCode} />
                     </td>
@@ -82,7 +84,8 @@ export default function History({
                       {formatDuration(ex.Timing.Duration)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -109,13 +112,17 @@ export function ExchangeDetail({
 }) {
   const reqHeaders = flattenHeaders(exchange.Request.Headers);
   const resHeaders = flattenHeaders(exchange.Response.Headers);
+  const label = graphqlDisplay(exchange);
   return (
     <div className="flex flex-col gap-4 text-sm">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-neutral-500 font-mono">#{exchange.Display}</span>
-          <MethodBadge method={exchange.Request.Method} />
-          <span className="font-mono text-xs break-all">{exchange.Request.URL}</span>
+        <div className="flex flex-col gap-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-neutral-500 font-mono">#{exchange.Display}</span>
+            <MethodBadge method={label.method} />
+            <span className="font-mono text-xs truncate">{label.name}</span>
+          </div>
+          <span className="font-mono text-xs text-neutral-500 break-all">{exchange.Request.URL}</span>
         </div>
         {onOpenInRequestBuilder && (
           <Button variant="secondary" onClick={() => onOpenInRequestBuilder(exchange.Display)}>
@@ -129,6 +136,8 @@ export function ExchangeDetail({
         <span className="text-neutral-500 text-xs">{formatDuration(exchange.Timing.Duration)}</span>
         {exchange.Redacted && <span className="text-xs text-yellow-500">redacted</span>}
       </div>
+
+      <TimingWaterfall timing={exchange.Timing} />
 
       {exchange.Err && <ErrorBanner message={exchange.Err} />}
 
@@ -155,6 +164,58 @@ export function ExchangeDetail({
       )}
     </div>
   );
+}
+
+export function TimingWaterfall({ timing }: { timing: Exchange["Timing"] }) {
+  const phases = [
+    { name: "dns", ns: timing.DNS ?? 0, color: "#38bdf8" },
+    { name: "connect", ns: timing.Connect ?? 0, color: "#a78bfa" },
+    { name: "tls", ns: timing.TLS ?? 0, color: "#f472b6" },
+    { name: "wait", ns: timing.Wait ?? 0, color: "#fbbf24" },
+    { name: "transfer", ns: timing.Transfer ?? 0, color: "#34d399" },
+  ];
+  const hasPhases = phases.some((p) => p.ns > 0);
+  return (
+    <div>
+      <div className="text-xs text-neutral-500 mb-1">
+        Timing{timing.TTFB ? ` · ttfb ${formatDuration(timing.TTFB)}` : ""}
+      </div>
+      {!hasPhases ? (
+        <div className="text-xs text-neutral-600">
+          Total {formatDuration(timing.Duration)}. Restart watch to capture DNS / connect / TLS / wait / transfer.
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {phases.every((p) => p.name === "wait" || p.ns === 0) && (timing.Wait ?? 0) > 0 && (
+            <div className="text-xs text-neutral-500 mb-1">
+              Localhost HTTP + reused socket: DNS / connect / TLS skipped. Wait is server time.
+            </div>
+          )}
+          {phases.map((p) => (
+            <div key={p.name} className="flex items-center gap-2 text-xs font-mono">
+              <span className="w-16 text-neutral-500">{p.name}</span>
+              <div className="flex-1 h-2 bg-neutral-900 rounded overflow-hidden">
+                <div
+                  style={{
+                    width: barWidth(p.ns, timing.Duration),
+                    height: "100%",
+                    background: p.color,
+                  }}
+                />
+              </div>
+              <span className="w-14 text-right text-neutral-400">{formatDuration(p.ns)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function barWidth(part: number, total: number): string {
+  if (part <= 0) return "0%";
+  if (total <= 0) return "2%";
+  return `${Math.max(2, Math.min(100, (part / total) * 100))}%`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

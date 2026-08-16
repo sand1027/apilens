@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, formatDuration, type Exchange } from "@/lib/api";
+import { api, ApiError, formatDuration, graphqlDisplay, type Exchange } from "@/lib/api";
 import { Button, Card, EmptyState, ErrorBanner, Input, MethodBadge, StatusBadge } from "@/components/ui";
 import { ExchangeDetail } from "@/components/History";
 
@@ -134,7 +134,9 @@ export default function Monitor({
           ) : (
             <table className="w-full text-sm">
               <tbody>
-                {events.map((ex) => (
+                {events.map((ex) => {
+                  const label = graphqlDisplay(ex);
+                  return (
                   <tr
                     key={ex.ID}
                     onClick={() => setSelected(ex)}
@@ -144,9 +146,9 @@ export default function Monitor({
                   >
                     <td className="px-4 py-2 w-12 text-neutral-500 font-mono">#{ex.Display}</td>
                     <td className="px-4 py-2 w-24">
-                      <MethodBadge method={ex.Request.Method} />
+                      <MethodBadge method={label.method} />
                     </td>
-                    <td className="px-4 py-2 font-mono text-neutral-200 truncate max-w-md">{ex.Request.URL}</td>
+                    <td className="px-4 py-2 font-mono text-neutral-200 truncate max-w-md">{label.name}</td>
                     <td className="px-4 py-2 w-16">
                       <StatusBadge status={ex.Response.StatusCode} />
                     </td>
@@ -154,7 +156,8 @@ export default function Monitor({
                       {formatDuration(ex.Timing.Duration)}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}

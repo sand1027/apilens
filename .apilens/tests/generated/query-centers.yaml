@@ -1,0 +1,55 @@
+version: 1
+name: QUERY centers
+tags:
+    - generated
+    - graphql
+request:
+    method: POST
+    url: '{{base_url}}/graphql'
+    headers:
+        Accept: '*/*'
+        Content-Type: application/json
+        X-Center-Id: 67fe36545e42152fb5185a6c
+        X-Client-Source: DASHBOARD
+        X-Organization-Id: 67fe35f25e42152fb5185a5e
+    auth:
+        type: bearer
+        token: '{{token}}'
+    graphql:
+        query: |-
+            query Centers {
+              centers {
+                name
+                phone
+                location
+                _id
+                seqNo
+                isOnline
+                address {
+                  street
+                  city
+                  state
+                  country
+                  zip
+                  __typename
+                }
+                organization {
+                  _id
+                  logo
+                  gstNumber
+                  panNumber
+                  brandName
+                  companyName
+                  socialLinks
+                  __typename
+                }
+                __typename
+              }
+            }
+        operation: Centers
+assert:
+    status:
+        equals: 200
+    graphql:
+        no_errors: true
+        has_data: true

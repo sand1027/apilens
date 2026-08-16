@@ -32,13 +32,19 @@ generate`.
 ## Try it
 
 ```bash
-go build -o apilens ./cmd/apilens
-./apilens init
-# next: apilens ui  — live hits in the corner widget
-# or:  apilens init --ui
-AUTH_TOKEN=dev ./apilens run
-echo $?          # 0 or 1
+git clone <this-repo> && cd ApiLens
+make install          # CLI → ~/.local/bin/apilens
 ```
+
+Then, in **any** project (Stance, a REST app, this repo):
+
+```bash
+apilens init
+apilens ui
+apilens watch --browser
+```
+
+`./apilens` only works inside the folder that contains the binary. `make install` puts `apilens` on PATH, same as hoptrace.
 
 Or run the bundled example against a small fixture API:
 

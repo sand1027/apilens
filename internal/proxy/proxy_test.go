@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -66,6 +68,74 @@ func TestBind_AllowsLoopback(t *testing.T) {
 	}
 	if p.Addr() == "" {
 		t.Error("expected Addr() to be set after successful Bind")
+	}
+}
+
+func TestForward_CapturesPhaseTimings(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer upstream.Close()
+
+	p, cleanup := startTestProxy(t, Options{})
+	defer cleanup()
+
+	client := clientThroughProxy(p.Addr())
+	resp, err := client.Get(upstream.URL + "/slow")
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	select {
+	case ex := <-p.Events():
+		if ex.Timing.Duration < 15*time.Millisecond {
+			t.Errorf("Duration = %s, want at least the upstream sleep", ex.Timing.Duration)
+		}
+		if ex.Timing.Wait == 0 && ex.Timing.TTFB == 0 && ex.Timing.Transfer == 0 {
+			t.Errorf("expected httptrace phases, got %+v", ex.Timing)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for a captured exchange")
+	}
+}
+
+func TestForward_StoresDecompressedJSON(t *testing.T) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	_, _ = gz.Write([]byte(`{"data":{"events":[]}}`))
+	_ = gz.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(200)
+		w.Write(buf.Bytes())
+	}))
+	defer upstream.Close()
+
+	p, cleanup := startTestProxy(t, Options{})
+	defer cleanup()
+
+	client := clientThroughProxy(p.Addr())
+	resp, err := client.Get(upstream.URL + "/graphql")
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	resp.Body.Close()
+
+	select {
+	case ex := <-p.Events():
+		if string(ex.Response.Body) != `{"data":{"events":[]}}` {
+			t.Errorf("captured body = %q, want decompressed JSON", ex.Response.Body)
+		}
+		if ex.Response.Headers.Get("Content-Encoding") != "" {
+			t.Errorf("stored Content-Encoding = %q, want empty after decode", ex.Response.Headers.Get("Content-Encoding"))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for a captured exchange")
 	}
 }
 

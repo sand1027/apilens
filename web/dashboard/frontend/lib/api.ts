@@ -39,6 +39,12 @@ export type Exchange = {
     Start: string;
     End: string;
     Duration: number; // nanoseconds (Go time.Duration)
+    DNS?: number;
+    Connect?: number;
+    TLS?: number;
+    Wait?: number;
+    TTFB?: number;
+    Transfer?: number;
   };
   Timestamp: string;
   Redacted: boolean;
