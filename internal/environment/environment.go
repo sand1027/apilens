@@ -333,6 +333,24 @@ func (r *Resolver) Get(name domain.EnvName) (domain.Environment, bool) {
 // "${ENV}" backing it is a config error — fail closed rather than sending
 // a literal placeholder or an empty secret (ADR-015).
 func (r *Resolver) Interpolate(s string) (string, error) {
+	return r.interpolate(s, nil)
+}
+
+// InterpolateAgainstResponse expands s exactly like Interpolate, plus a
+// "{{response.<field>}}" (singular, no id) form that resolves against own
+// — this test's own just-completed exchange, not an entry in the
+// responses map. Used only by `cleanup:` blocks (see CleanupSpec's doc
+// comment): cleanup runs immediately after the SAME test's request
+// completes, so it needs to reference that response's own body/headers
+// (e.g. the "_id" a create mutation just returned) — something DSL v2's
+// "{{responses.<id>...}}" chaining cannot express, since chaining only
+// lets a LATER test reference an EARLIER one by id, never a test
+// referencing its own result.
+func (r *Resolver) InterpolateAgainstResponse(s string, own domain.Exchange) (string, error) {
+	return r.interpolate(s, &own)
+}
+
+func (r *Resolver) interpolate(s string, own *domain.Exchange) (string, error) {
 	env := r.Current()
 	var missing []string
 	result := varPattern.ReplaceAllStringFunc(s, func(match string) string {
@@ -342,6 +360,14 @@ func (r *Resolver) Interpolate(s string) (string, error) {
 		}
 		if strings.HasPrefix(name, "responses.") {
 			val, err := r.lookupResponse(strings.TrimPrefix(name, "responses."))
+			if err != nil {
+				missing = append(missing, name+" ("+err.Error()+")")
+				return match
+			}
+			return val
+		}
+		if own != nil && strings.HasPrefix(name, "response.") {
+			val, err := resolveResponseField(*own, "response", strings.TrimPrefix(name, "response."))
 			if err != nil {
 				missing = append(missing, name+" ("+err.Error()+")")
 				return match
@@ -369,21 +395,17 @@ func (r *Resolver) Interpolate(s string) (string, error) {
 
 // lookupResponse resolves the part of a "responses.<id>.<field...>"
 // reference after the "responses." prefix (DSL v2 chaining, plan.md v9).
-// Supported field paths:
-//
-//	<id>.status                    -> HTTP status code, e.g. "200"
-//	<id>.headers.<name>             -> a response header value (case-insensitive)
-//	<id>.body.<dotted.json.path>    -> a value from the JSON response body
-//	<id>.body                       -> the raw response body as a string
-//
 // An unknown id (test hasn't run yet, doesn't exist, or isn't recorded
-// because it has no "id:") or an unresolvable field path is a runtime
-// error — chaining references can't be validated at Compile time because
-// the referenced test's outcome doesn't exist yet (docs/06-test-dsl.md
-// section 12's compile-vs-assertion-failure split extends naturally here:
-// this is neither, it's a THIRD failure point that can only happen once
-// the suite starts executing, so it surfaces as this test's own status
-// going to "errored", same as any other Interpolate failure).
+// because it has no "id:") is a runtime error — chaining references
+// can't be validated at Compile time because the referenced test's
+// outcome doesn't exist yet (docs/06-test-dsl.md section 12's
+// compile-vs-assertion-failure split extends naturally here: this is
+// neither, it's a THIRD failure point that can only happen once the
+// suite starts executing, so it surfaces as this test's own status going
+// to "errored", same as any other Interpolate failure). Field path
+// resolution itself is shared with resolveResponseField, used again by
+// the "response.<field>" (singular, no id) form for cleanup: — see
+// InterpolateValue's doc comment.
 func (r *Resolver) lookupResponse(rest string) (string, error) {
 	parts := strings.SplitN(rest, ".", 2)
 	id := parts[0]
@@ -397,28 +419,36 @@ func (r *Resolver) lookupResponse(rest string) (string, error) {
 	if len(parts) == 1 {
 		return "", fmt.Errorf("responses.%s needs a field, e.g. responses.%s.status / .headers.<name> / .body.<path>", id, id)
 	}
+	return resolveResponseField(ex, id, parts[1])
+}
 
-	field := parts[1]
+// resolveResponseField resolves <field...> (status / headers.<name> /
+// body[.<path>]) against an already-fetched Exchange. label is used only
+// for error messages, so the same field-resolution logic serves both
+// "responses.<id>.<field>" (label = the test id) and the cleanup-only
+// "response.<field>" singular form (label = "response", no id — see
+// InterpolateValue).
+func resolveResponseField(ex domain.Exchange, label, field string) (string, error) {
 	switch {
 	case field == "status":
 		return strconv.Itoa(ex.Response.StatusCode), nil
 	case strings.HasPrefix(field, "headers."):
 		name := strings.TrimPrefix(field, "headers.")
 		if ex.Response.Headers == nil {
-			return "", fmt.Errorf("responses.%s has no headers", id)
+			return "", fmt.Errorf("%s has no headers", label)
 		}
 		values, ok := ex.Response.Headers[http.CanonicalHeaderKey(name)]
 		if !ok || len(values) == 0 {
-			return "", fmt.Errorf("responses.%s.headers.%s not present", id, name)
+			return "", fmt.Errorf("%s.headers.%s not present", label, name)
 		}
 		return values[0], nil
 	case field == "body":
 		return string(ex.Response.Body), nil
 	case strings.HasPrefix(field, "body."):
 		path := strings.TrimPrefix(field, "body.")
-		return lookupResponseJSONPath(ex.Response.Body, id, path)
+		return lookupResponseJSONPath(ex.Response.Body, label, path)
 	default:
-		return "", fmt.Errorf("unrecognized responses.%s.%s (expected status, headers.<name>, or body[.<path>])", id, field)
+		return "", fmt.Errorf("unrecognized %s.%s (expected status, headers.<name>, or body[.<path>])", label, field)
 	}
 }
 
@@ -511,7 +541,7 @@ func (r *Resolver) InterpolateRequest(tmpl domain.RequestTemplate) (domain.HTTPR
 		}
 		vars := tmpl.GraphQL.Variables
 		if vars != nil {
-			vars, err = r.interpolateJSONValue(vars)
+			vars, err = r.interpolateJSONValue(vars, r.Interpolate)
 			if err != nil {
 				return domain.HTTPRequest{}, err
 			}
@@ -540,6 +570,19 @@ func (r *Resolver) InterpolateRequest(tmpl domain.RequestTemplate) (domain.HTTPR
 		Body:    body,
 		Timeout: tmpl.Timeout,
 	}, nil
+}
+
+// InterpolateFilterAgainstResponse expands every string leaf of a
+// decoded db.<connection>.filter value (map[string]any / []any / scalar
+// tree, per gopkg.in/yaml.v3's default decoding) using
+// InterpolateAgainstResponse — the cleanup: block's equivalent of
+// interpolateJSONValue for a request body. Exported because
+// internal/testrunner (not internal/environment) is what has both the
+// CleanupSpec and the just-completed Exchange in hand.
+func (r *Resolver) InterpolateFilterAgainstResponse(filter any, own domain.Exchange) (any, error) {
+	return r.interpolateJSONValue(filter, func(s string) (string, error) {
+		return r.InterpolateAgainstResponse(s, own)
+	})
 }
 
 func (r *Resolver) applyAuth(a domain.AuthTemplate, headers http.Header, query url.Values) error {

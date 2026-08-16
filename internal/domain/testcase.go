@@ -63,6 +63,12 @@ type TestCase struct {
 	Skip        bool
 	Request     RequestTemplate
 	Assert      AssertionSpec
+	// Cleanup runs after this test's own request completes — regardless
+	// of whether the test passed, failed, or errored — to delete
+	// whatever database record(s) it created. See CleanupSpec's doc
+	// comment for why this exists as its own top-level block rather than
+	// living under Assert.
+	Cleanup     CleanupSpec
 	Timeout     time.Duration // effective per-test timeout after defaults
 	Retries     int
 

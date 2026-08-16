@@ -15,8 +15,13 @@ type AssertionSpec struct {
 	GraphQL *GraphQLAssertSpec
 	// DB is a v9 addition (plan.md v9: "Database assertions (opt-in
 	// plugin)") — keyed by the connection name configured under
-	// db.connections in config.yaml.
-	DB map[string]DBSpec
+	// db.connections in config.yaml. Each connection maps to a LIST of
+	// checks (not a single one) so one test can verify several
+	// collections/queries against the same connection in one go (e.g.
+	// after a mutation that writes to both "advances" and "receipts") —
+	// testdef accepts either a single mapping or a list in YAML for a
+	// given connection and always normalizes to []DBSpec here.
+	DB map[string][]DBSpec
 }
 
 // GraphQLAssertSpec is the assert.graphql YAML block.
@@ -128,6 +133,36 @@ const (
 	KindGraphQLHasData     AssertionKind = "graphql.has_data"
 	KindGraphQLErrorContains AssertionKind = "graphql.error_contains"
 )
+
+// CleanupSpec is the top-level `cleanup:` block, a sibling of `assert:`
+// rather than nested inside it — cleanup is a teardown action taken
+// after a test, not a check the test's pass/fail depends on. It exists
+// specifically for mutation tests (docs/06-test-dsl.md's DB assertions
+// were read-only by design; cleanup is the intentionally separate,
+// explicitly opt-in path that may delete) so a test that creates a real
+// database record — e.g. a GraphQL "createX" mutation — can remove that
+// record afterward instead of leaving a permanent artifact in whatever
+// database the test ran against.
+//
+// Deliberately MongoDB-only for now (Collection/Filter, no SQL query
+// shape) — matches the concrete need this was built for; a SQL DELETE
+// shape can be added later without changing this type's existing fields.
+type CleanupSpec struct {
+	// DB is keyed by db.connections.<name> from config.yaml, same as
+	// AssertionSpec.DB — a list per connection so one test can clean up
+	// several collections it wrote to.
+	DB map[string][]CleanupDBSpec
+}
+
+// CleanupDBSpec is one collection to delete matching documents from.
+// Filter must never be empty/nil — see dbassert.Registry.DeleteMongo's
+// "fail closed" guard, which refuses to run a delete with no filter at
+// all (an empty MongoDB filter matches -- and deletes -- every document
+// in the collection).
+type CleanupDBSpec struct {
+	Collection string
+	Filter     any
+}
 
 // AssertionResult is the outcome of evaluating a single compiled check
 // against an Exchange.

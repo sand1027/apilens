@@ -36,6 +36,16 @@ func WithDBRegistry(reg *dbassert.Registry) Option {
 	return func(e *Engine) { e.dbRegistry = reg }
 }
 
+// DBRegistry returns the Registry this Engine was built with (nil if
+// none was configured). Exported so internal/testrunner can run
+// `cleanup:` blocks (domain.CleanupSpec) against the SAME connections
+// assertions use, without internal/testrunner needing its own separate
+// dbassert.NewRegistry call/config-reading path — one Registry per suite
+// run, shared by both concerns.
+func (e *Engine) DBRegistry() *dbassert.Registry {
+	return e.dbRegistry
+}
+
 // New builds an assertions Engine. Built-in kinds (status/header/body/
 // json/duration) need no state and are always available; db.* checks
 // need an opted-in dbassert.Registry (docs/03-plugins.md section 10 lists
@@ -132,29 +142,32 @@ func (e *Engine) Compile(spec domain.AssertionSpec) (domain.AssertionSet, error)
 		}
 	}
 
-	for connName, d := range spec.DB {
-		// Only the SQL shape (Query set) needs the read-only keyword
-		// scan — a MongoDB db.<connection>.filter block (Collection
-		// set) has no SQL string to validate; it can only ever express
-		// a read (Collection.Find/CountDocuments/FindOne), never a
-		// write, since dbassert.mongo.go never calls
-		// InsertOne/UpdateOne/DeleteOne etc.
-		if d.Query != "" {
-			if err := dbassert.ValidateReadOnly(d.Query); err != nil {
-				return domain.AssertionSet{}, domain.NewConfigError(
-					fmt.Sprintf("compiling db.%s", connName), err)
-			}
-		}
+	for connName, specs := range spec.DB {
 		if e.dbRegistry == nil {
 			return domain.AssertionSet{}, domain.NewConfigError(
 				fmt.Sprintf("db.%s used but no db connections are configured — add db.connections.%s to config.yaml", connName, connName), nil)
 		}
-		check, err := newDBCheck(connName, d, e.dbRegistry)
-		if err != nil {
-			return domain.AssertionSet{}, domain.NewConfigError(
-				fmt.Sprintf("compiling db.%s", connName), err)
+		for i, d := range specs {
+			// Only the SQL shape (Query set) needs the read-only
+			// keyword scan — a MongoDB db.<connection>[i].filter block
+			// (Collection set) has no SQL string to validate; it can
+			// only ever express a read (Collection.Find/
+			// CountDocuments/FindOne), never a write, since
+			// dbassert.mongo.go never calls
+			// InsertOne/UpdateOne/DeleteOne etc.
+			if d.Query != "" {
+				if err := dbassert.ValidateReadOnly(d.Query); err != nil {
+					return domain.AssertionSet{}, domain.NewConfigError(
+						fmt.Sprintf("compiling db.%s[%d]", connName, i), err)
+				}
+			}
+			check, err := newDBCheck(connName, d, e.dbRegistry)
+			if err != nil {
+				return domain.AssertionSet{}, domain.NewConfigError(
+					fmt.Sprintf("compiling db.%s[%d]", connName, i), err)
+			}
+			checks = append(checks, check)
 		}
-		checks = append(checks, check)
 	}
 
 	if len(checks) == 0 {

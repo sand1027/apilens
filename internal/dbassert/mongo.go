@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +86,33 @@ func mongoDatabaseNameFromDSN(dsn string) (string, error) {
 	return name, nil
 }
 
+// mongoCollectionsTimeout bounds the listCollections command used by
+// ListCollectionNames — a metadata call, not a document query, but still
+// subject to the same "no unbounded external call" discipline as every
+// other database round trip in this package.
+const mongoCollectionsTimeout = 5 * time.Second
+
+// ListCollectionNames returns every collection name in connName's
+// database. Used by internal/generate to verify a guessed collection name
+// (naive-pluralized from a GraphQL response's "__typename") against what
+// actually exists, rather than writing an unverified guess into a
+// generated test file (docs/07-discovery.md's "we never invent endpoints
+// that are not in source" principle, applied here to "never invent a
+// collection name that isn't in the database").
+func (r *Registry) ListCollectionNames(connName string) ([]string, error) {
+	db, err := r.getMongo(connName)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mongoCollectionsTimeout)
+	defer cancel()
+	names, err := db.ListCollectionNames(ctx, bson.D{})
+	if err != nil {
+		return nil, fmt.Errorf("listing collections for db connection %q: %w", connName, err)
+	}
+	return names, nil
+}
+
 // RowCountMongo runs filter against collection and returns the number of
 // matching documents — the MongoDB analogue of RowCount.
 func (r *Registry) RowCountMongo(ctx context.Context, connName, collection string, filter any) (int, error) {
@@ -137,11 +165,23 @@ func (r *Registry) FirstValueMongo(ctx context.Context, connName, collection str
 // map[string]any / []any / scalar tree, per gopkg.in/yaml.v3's default
 // decoding — see internal/testdef.document's use of `any` fields) into a
 // bson.M the driver can send as-is. YAML's map[string]any keys are
-// already strings, so this is a type assertion, not a real conversion —
-// but it fails closed with a clear error rather than passing a
-// non-object filter (e.g. a bare string) straight to the driver, which
-// would otherwise surface as an opaque marshal error deep in the mongo
-// package.
+// already strings, so this is mostly a type assertion, not a real
+// conversion — but it fails closed with a clear error rather than
+// passing a non-object filter (e.g. a bare string) straight to the
+// driver, which would otherwise surface as an opaque marshal error deep
+// in the mongo package.
+//
+// Top-level string VALUES that look like a 24-hex-char ObjectID are
+// additionally rewritten to match either representation
+// (coerceObjectIDLookingValues) — confirmed against a real server that a
+// plain hex string filter value does NOT match a document whose _id (or
+// any other ObjectID-typed reference field) is stored as a genuine BSON
+// ObjectID, only a document whose _id happens to be stored as a plain
+// string matches. Since a YAML/JSON author (or an auto-generated test —
+// see internal/generate's response-derived db.* blocks) has no way to
+// know which representation a given collection actually uses, this makes
+// "_id: <hex string>" work either way instead of silently matching zero
+// documents on the (very common) ObjectID-typed case.
 func toBSONFilter(filter any) (bson.M, error) {
 	if filter == nil {
 		return bson.M{}, nil
@@ -150,7 +190,40 @@ func toBSONFilter(filter any) (bson.M, error) {
 	if !ok {
 		return nil, fmt.Errorf("must be a mapping (e.g. {email: \"a@b.com\"}), got %T", filter)
 	}
-	return bson.M(m), nil
+	return coerceObjectIDLookingValues(m), nil
+}
+
+// objectIDHexPattern matches exactly what bson.ObjectIDFromHex accepts: 24
+// lowercase or uppercase hex characters.
+var objectIDHexPattern = regexp.MustCompile(`^[0-9a-fA-F]{24}$`)
+
+// coerceObjectIDLookingValues rewrites every top-level string value that
+// looks like an ObjectID hex string into a "$in: [original string,
+// parsed ObjectID]" match, so the filter succeeds regardless of which
+// representation the target collection actually stores that field as.
+// Only top-level scalar string values are rewritten — a value that is
+// already a nested operator document (e.g. {"$gt": ...}) is left alone,
+// since ObjectID-vs-string ambiguity only ever applies to a bare
+// equality-style leaf value, not to an already-explicit query operator.
+func coerceObjectIDLookingValues(m map[string]any) bson.M {
+	out := make(bson.M, len(m))
+	for k, v := range m {
+		s, ok := v.(string)
+		if !ok || !objectIDHexPattern.MatchString(s) {
+			out[k] = v
+			continue
+		}
+		oid, err := bson.ObjectIDFromHex(s)
+		if err != nil {
+			// Matched the hex pattern but somehow failed to parse --
+			// keep the original string rather than risk silently
+			// dropping the filter condition.
+			out[k] = v
+			continue
+		}
+		out[k] = bson.M{"$in": []any{s, oid}}
+	}
+	return out
 }
 
 // formatBSONValue renders a BSON scalar as a plain string for db.equals

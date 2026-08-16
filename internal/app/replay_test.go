@@ -63,7 +63,7 @@ func TestGenerate_WritesFromHistoryEntry(t *testing.T) {
 		Response: domain.HTTPResponse{StatusCode: 200},
 	})
 
-	g, err := a.Generate(int(stored.Display), generate.Options{})
+	g, err := a.Generate(int(stored.Display), GenerateOptions{Options: generate.Options{}})
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestGenerate_UnknownIDReturnsNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	_, err = a.Generate(999, generate.Options{})
+	_, err = a.Generate(999, GenerateOptions{Options: generate.Options{}})
 	if err == nil {
 		t.Fatal("expected not-found error for an unknown history id")
 	}

@@ -117,6 +117,10 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 	if err != nil {
 		return domain.TestCase{}, err
 	}
+	cleanupSpec, err := compileCleanup(doc.Cleanup, file)
+	if err != nil {
+		return domain.TestCase{}, err
+	}
 
 	tc := domain.TestCase{
 		Name:         doc.Name,
@@ -140,6 +144,7 @@ func compileDocument(doc document, file string) (domain.TestCase, error) {
 			Timeout: timeout,
 		},
 		Assert:  assertSpec,
+		Cleanup: cleanupSpec,
 		Timeout: timeout,
 		Retries: retries,
 	}
@@ -284,28 +289,36 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 		}
 	}
 	if len(a.DB) > 0 {
-		spec.DB = make(map[string]domain.DBSpec, len(a.DB))
-		for conn, d := range a.DB {
-			hasSQL := d.Query != ""
-			hasMongo := d.Collection != ""
-			if hasSQL && hasMongo {
+		spec.DB = make(map[string][]domain.DBSpec, len(a.DB))
+		for conn, docs := range a.DB {
+			if len(docs) == 0 {
 				return domain.AssertionSpec{}, domain.NewConfigError(
-					fmt.Sprintf("%s: db.%s cannot set both \"query\" (SQL) and \"collection\" (MongoDB)", file, conn), nil)
+					fmt.Sprintf("%s: db.%s has no checks", file, conn), nil)
 			}
-			if !hasSQL && !hasMongo {
-				return domain.AssertionSpec{}, domain.NewConfigError(
-					fmt.Sprintf("%s: db.%s requires either \"query\" (SQL) or \"collection\" (MongoDB)", file, conn), nil)
+			specs := make([]domain.DBSpec, 0, len(docs))
+			for i, d := range docs {
+				hasSQL := d.Query != ""
+				hasMongo := d.Collection != ""
+				if hasSQL && hasMongo {
+					return domain.AssertionSpec{}, domain.NewConfigError(
+						fmt.Sprintf("%s: db.%s[%d] cannot set both \"query\" (SQL) and \"collection\" (MongoDB)", file, conn, i), nil)
+				}
+				if !hasSQL && !hasMongo {
+					return domain.AssertionSpec{}, domain.NewConfigError(
+						fmt.Sprintf("%s: db.%s[%d] requires either \"query\" (SQL) or \"collection\" (MongoDB)", file, conn, i), nil)
+				}
+				specs = append(specs, domain.DBSpec{
+					Query:          d.Query,
+					Args:           d.Args,
+					Collection:     d.Collection,
+					Filter:         d.Filter,
+					Field:          d.Field,
+					RowCountEquals: d.RowCountEquals,
+					Exists:         d.Exists,
+					Equals:         d.Equals,
+				})
 			}
-			spec.DB[conn] = domain.DBSpec{
-				Query:          d.Query,
-				Args:           d.Args,
-				Collection:     d.Collection,
-				Filter:         d.Filter,
-				Field:          d.Field,
-				RowCountEquals: d.RowCountEquals,
-				Exists:         d.Exists,
-				Equals:         d.Equals,
-			}
+			spec.DB[conn] = specs
 		}
 	}
 
@@ -315,6 +328,56 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 			fmt.Sprintf("%s: test has no assertions under \"assert\"", file), nil)
 	}
 	return spec, nil
+}
+
+// compileCleanup validates and converts the cleanup: block. Every entry
+// must set both collection and a non-empty filter — a missing/empty
+// filter is rejected at Compile time (not left for dbassert to catch at
+// run time) because an empty MongoDB filter matches every document in
+// the collection, and "delete everything" is never what an empty filter
+// here could have meant.
+func compileCleanup(c cleanupDoc, file string) (domain.CleanupSpec, error) {
+	spec := domain.CleanupSpec{}
+	if len(c.DB) == 0 {
+		return spec, nil
+	}
+	spec.DB = make(map[string][]domain.CleanupDBSpec, len(c.DB))
+	for conn, items := range c.DB {
+		if len(items) == 0 {
+			return domain.CleanupSpec{}, domain.NewConfigError(
+				fmt.Sprintf("%s: cleanup.db.%s has no targets", file, conn), nil)
+		}
+		targets := make([]domain.CleanupDBSpec, 0, len(items))
+		for i, item := range items {
+			if item.Collection == "" {
+				return domain.CleanupSpec{}, domain.NewConfigError(
+					fmt.Sprintf("%s: cleanup.db.%s[%d] requires \"collection\"", file, conn, i), nil)
+			}
+			if isEmptyFilter(item.Filter) {
+				return domain.CleanupSpec{}, domain.NewConfigError(
+					fmt.Sprintf("%s: cleanup.db.%s[%d] requires a non-empty \"filter\" — an empty filter would delete every document in %q", file, conn, i, item.Collection), nil)
+			}
+			targets = append(targets, domain.CleanupDBSpec{Collection: item.Collection, Filter: item.Filter})
+		}
+		spec.DB[conn] = targets
+	}
+	return spec, nil
+}
+
+// isEmptyFilter reports whether filter is nil, or a map/slice with no
+// elements — every one of these would compile to a MongoDB filter that
+// matches (and, for cleanup, deletes) the entire collection.
+func isEmptyFilter(filter any) bool {
+	switch f := filter.(type) {
+	case nil:
+		return true
+	case map[string]any:
+		return len(f) == 0
+	case []any:
+		return len(f) == 0
+	default:
+		return false
+	}
 }
 
 // loadSchemaFile resolves schemaFile relative to the test file's own

@@ -34,6 +34,27 @@ type TestResult struct {
 	DurationMS    int64
 	Assertions    []AssertionResult
 	Error         string // populated when Status == errored
+	// CleanupResults reports the outcome of this test's cleanup: block,
+	// if it had one — kept as its own field, separate from Assertions,
+	// because a cleanup failure is not an assertion failure: it never
+	// changes Status (a test that passed its checks but whose teardown
+	// failed still Passed — the record it created just wasn't removed,
+	// which is a "you may have leftover test data" warning, not a test
+	// failure) and reporters must not conflate the two. Empty when the
+	// test had no cleanup: block at all.
+	CleanupResults []CleanupResult
+}
+
+// CleanupResult is the outcome of one cleanup.db.<connection>[i] target.
+type CleanupResult struct {
+	Connection string
+	Collection string
+	// DeletedCount is the number of documents actually removed. -1 if
+	// the delete itself failed (see Error) — kept distinct from a
+	// legitimate 0 (filter matched nothing, e.g. the test itself failed
+	// before creating anything, so there was nothing to clean up).
+	DeletedCount int
+	Error        string
 }
 
 // Counts summarizes a Report for the terminal footer and JSON `counts`.

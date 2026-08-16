@@ -17,7 +17,7 @@ func mongoTestDSN() string {
 	if v := os.Getenv("APILENS_TEST_MONGO_DSN"); v != "" {
 		return v
 	}
-	return "mongodb://127.0.0.1:27117/apilens_dbassert_test"
+	return "mongodb://127.0.0.1:27017/apilens_dbassert_test"
 }
 
 // skipIfNoMongo mirrors dbassert's own test helper of the same purpose —
@@ -70,8 +70,8 @@ func TestEngine_DBMongoExists_TrueAndFalse(t *testing.T) {
 	e := New(WithDBRegistry(reg))
 	yes := true
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Collection: "orders", Filter: map[string]any{"status": "paid"}, Exists: &yes},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Collection: "orders", Filter: map[string]any{"status": "paid"}, Exists: &yes}},
 		},
 	})
 	if err != nil {
@@ -83,8 +83,8 @@ func TestEngine_DBMongoExists_TrueAndFalse(t *testing.T) {
 	}
 
 	set2, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Collection: "orders", Filter: map[string]any{"status": "refunded"}, Exists: &yes},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Collection: "orders", Filter: map[string]any{"status": "refunded"}, Exists: &yes}},
 		},
 	})
 	if err != nil {
@@ -101,8 +101,8 @@ func TestEngine_DBMongoRowCountEquals(t *testing.T) {
 	e := New(WithDBRegistry(reg))
 	want := 1
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Collection: "orders", Filter: map[string]any{"status": "paid"}, RowCountEquals: &want},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Collection: "orders", Filter: map[string]any{"status": "paid"}, RowCountEquals: &want}},
 		},
 	})
 	if err != nil {
@@ -118,8 +118,8 @@ func TestEngine_DBMongoEquals_ComparesNamedField(t *testing.T) {
 	reg := newMongoRegistryWithSeededOrders(t)
 	e := New(WithDBRegistry(reg))
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Collection: "orders", Filter: map[string]any{"_id": "o1"}, Field: "status", Equals: "paid"},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Collection: "orders", Filter: map[string]any{"_id": "o1"}, Field: "status", Equals: "paid"}},
 		},
 	})
 	if err != nil {
@@ -140,8 +140,8 @@ func TestEngine_DBMongoAssertion_DoesNotRequireReadOnlyKeywordScan(t *testing.T)
 	e := New(WithDBRegistry(reg))
 	yes := true
 	_, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Collection: "orders", Filter: map[string]any{"status": "paid"}, Exists: &yes},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Collection: "orders", Filter: map[string]any{"status": "paid"}, Exists: &yes}},
 		},
 	})
 	if err != nil {
@@ -153,8 +153,8 @@ func TestEngine_DBMongoAssertion_WithoutRegistryIsConfigError(t *testing.T) {
 	e := New() // no WithDBRegistry
 	yes := true
 	_, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Collection: "orders", Filter: map[string]any{"status": "paid"}, Exists: &yes},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Collection: "orders", Filter: map[string]any{"status": "paid"}, Exists: &yes}},
 		},
 	})
 	if err == nil {

@@ -56,13 +56,20 @@ func dropGeneratedHeader(name string) bool {
 type Options struct {
 	Out   string // explicit output path; empty uses the default slug path
 	Force bool   // overwrite an existing file
+	// DBHints, when set, adds db.* assertions derived from the captured
+	// response's "__typename"/"_id" fields, verified against a real
+	// MongoDB connection before being written (see dbhints.go). Nil
+	// (the default) skips this entirely — most captures have nothing
+	// to do with a database at all.
+	DBHints *DBHintOptions
 }
 
 // Generated mirrors docs/04-interfaces.md section 12's generate.Generated.
 type Generated struct {
-	Path    string
-	Content []byte
-	Test    domain.TestCase
+	Path         string
+	Content      []byte
+	Test         domain.TestCase
+	SkippedHints []string
 }
 
 // Service implements docs/04-interfaces.md section 12's generate.Service.
@@ -81,6 +88,11 @@ func New(projectDir string) *Service {
 // (docs/08-proxy.md section 9).
 func (s *Service) FromExchange(ex domain.Exchange, opts Options) (Generated, error) {
 	tc := BuildTestCase(ex)
+
+	var skippedHints []string
+	if opts.DBHints != nil {
+		tc, skippedHints = enrichWithDBHints(tc, ex, *opts.DBHints)
+	}
 
 	path := opts.Out
 	if path == "" {
@@ -106,7 +118,7 @@ func (s *Service) FromExchange(ex domain.Exchange, opts Options) (Generated, err
 		return Generated{}, domain.NewConfigError("writing generated test", err)
 	}
 
-	return Generated{Path: path, Content: content, Test: tc}, nil
+	return Generated{Path: path, Content: content, Test: tc, SkippedHints: skippedHints}, nil
 }
 
 // BuildTestCase maps an Exchange to a TestCase per docs/06-test-dsl.md
@@ -257,8 +269,19 @@ type yamlBody struct {
 }
 
 type yamlAssert struct {
-	Status  yamlStatus     `yaml:"status"`
-	GraphQL *yamlGQLAssert `yaml:"graphql,omitempty"`
+	Status  yamlStatus          `yaml:"status"`
+	GraphQL *yamlGQLAssert      `yaml:"graphql,omitempty"`
+	DB      map[string][]yamlDB `yaml:"db,omitempty"`
+}
+
+// yamlDB mirrors testdef.dbDoc's MongoDB shape only — generate never
+// derives the SQL (query/args) shape, since there is no way to guess a
+// SELECT statement from a GraphQL response the way a collection name can
+// be guessed from "__typename" (see dbhints.go).
+type yamlDB struct {
+	Collection string `yaml:"collection"`
+	Filter     any    `yaml:"filter"`
+	Exists     bool   `yaml:"exists"`
 }
 
 type yamlStatus struct {
@@ -308,6 +331,20 @@ func MarshalYAML(tc domain.TestCase) ([]byte, error) {
 		}
 		if g.HasData != nil {
 			doc.Assert.GraphQL.HasData = *g.HasData
+		}
+	}
+	if len(tc.Assert.DB) > 0 {
+		doc.Assert.DB = make(map[string][]yamlDB, len(tc.Assert.DB))
+		for conn, specs := range tc.Assert.DB {
+			ys := make([]yamlDB, 0, len(specs))
+			for _, s := range specs {
+				exists := false
+				if s.Exists != nil {
+					exists = *s.Exists
+				}
+				ys = append(ys, yamlDB{Collection: s.Collection, Filter: s.Filter, Exists: exists})
+			}
+			doc.Assert.DB[conn] = ys
 		}
 	}
 	return yaml.Marshal(doc)
