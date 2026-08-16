@@ -14,6 +14,7 @@ import (
 	"github.com/sandeepv/apilens/internal/assertions"
 	"github.com/sandeepv/apilens/internal/domain"
 	"github.com/sandeepv/apilens/internal/environment"
+	"github.com/sandeepv/apilens/internal/graphqlop"
 	"github.com/sandeepv/apilens/internal/reporter"
 	"github.com/sandeepv/apilens/internal/runner"
 )
@@ -142,10 +143,11 @@ func (r *Runner) runParallel(ctx context.Context, tests []domain.TestCase, opts 
 
 func skippedResult(tc domain.TestCase) domain.TestResult {
 	return domain.TestResult{
-		Name:   tc.Name,
-		File:   tc.File,
-		Status: domain.StatusSkipped,
-		Method: tc.Request.Method,
+		Name:          tc.Name,
+		File:          tc.File,
+		Status:        domain.StatusSkipped,
+		Method:        tc.Request.Method,
+		DisplayMethod: string(tc.Request.Method),
 	}
 }
 
@@ -154,7 +156,7 @@ func skippedResult(tc domain.TestCase) domain.TestResult {
 // already compiled the assertion spec at load time; here we only compile it
 // into executable checks.
 func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) domain.TestResult {
-	base := domain.TestResult{Name: tc.Name, File: tc.File, Method: tc.Request.Method}
+	base := domain.TestResult{Name: tc.Name, File: tc.File, Method: tc.Request.Method, DisplayMethod: string(tc.Request.Method)}
 
 	if tc.Skip {
 		base.Status = domain.StatusSkipped
@@ -175,6 +177,7 @@ func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) d
 		return base
 	}
 	base.URL = req.URL
+	base.DisplayMethod, base.DisplayName = graphqlop.DisplayColumns(req.Method, req.URL, req.Body)
 
 	timeout := tc.Timeout
 	if timeout <= 0 {

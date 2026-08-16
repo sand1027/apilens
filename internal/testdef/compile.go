@@ -286,13 +286,22 @@ func compileAssert(a assertDoc, file string) (domain.AssertionSpec, error) {
 	if len(a.DB) > 0 {
 		spec.DB = make(map[string]domain.DBSpec, len(a.DB))
 		for conn, d := range a.DB {
-			if d.Query == "" {
+			hasSQL := d.Query != ""
+			hasMongo := d.Collection != ""
+			if hasSQL && hasMongo {
 				return domain.AssertionSpec{}, domain.NewConfigError(
-					fmt.Sprintf("%s: db.%s requires a \"query\"", file, conn), nil)
+					fmt.Sprintf("%s: db.%s cannot set both \"query\" (SQL) and \"collection\" (MongoDB)", file, conn), nil)
+			}
+			if !hasSQL && !hasMongo {
+				return domain.AssertionSpec{}, domain.NewConfigError(
+					fmt.Sprintf("%s: db.%s requires either \"query\" (SQL) or \"collection\" (MongoDB)", file, conn), nil)
 			}
 			spec.DB[conn] = domain.DBSpec{
 				Query:          d.Query,
 				Args:           d.Args,
+				Collection:     d.Collection,
+				Filter:         d.Filter,
+				Field:          d.Field,
 				RowCountEquals: d.RowCountEquals,
 				Exists:         d.Exists,
 				Equals:         d.Equals,

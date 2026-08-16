@@ -29,26 +29,38 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sandeepv/apilens/internal/domain"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // Registry holds open, opt-in-configured database connections, keyed by
-// the connection name used in the YAML DSL (db.<connection>.query...).
-// Connections are opened lazily on first use and cached for the life of
-// the process — the same posture internal/runner's shared http.Client
-// takes toward keeping one pool alive across a whole suite run rather
-// than reconnecting per test.
+// the connection name used in the YAML DSL (db.<connection>.query... for
+// SQL, db.<connection>.collection/filter for MongoDB). Connections are
+// opened lazily on first use and cached for the life of the process — the
+// same posture internal/runner's shared http.Client takes toward keeping
+// one pool alive across a whole suite run rather than reconnecting per
+// test.
+//
+// SQL (sqlite/postgres) connections live in conns (via database/sql,
+// which pools internally); MongoDB connections live in mongoConns/
+// mongoClients since the Mongo driver is not a database/sql driver and
+// needs its own client lifecycle (mongo.Client.Disconnect, not sql.DB.Close).
 type Registry struct {
-	mu    sync.Mutex
-	conns map[string]*sql.DB
-	dsns  map[string]ConnectionConfig
+	mu           sync.Mutex
+	conns        map[string]*sql.DB
+	mongoClients map[string]*mongo.Client
+	mongoConns   map[string]*mongo.Database
+	dsns         map[string]ConnectionConfig
 }
 
 // ConnectionConfig names one configured connection (plan.md v9: opt-in —
-// there is no default connection).
+// there is no default connection). Driver selects which of the two
+// connection families (SQL via database/sql, or MongoDB via its own
+// driver) DSN is opened with — see registeredDriverName / isMongoDriver.
 type ConnectionConfig struct {
-	Driver string // "sqlite" or "postgres" (v9 ships both; more drivers can register later)
+	Driver string // "sqlite", "postgres", or "mongodb" (more drivers can register later)
 	DSN    string
 }
 
@@ -59,19 +71,32 @@ type ConnectionConfig struct {
 // validation discipline).
 func NewRegistry(conns map[string]ConnectionConfig) *Registry {
 	return &Registry{
-		conns: make(map[string]*sql.DB),
-		dsns:  conns,
+		conns:        make(map[string]*sql.DB),
+		mongoClients: make(map[string]*mongo.Client),
+		mongoConns:   make(map[string]*mongo.Database),
+		dsns:         conns,
 	}
 }
 
-// Close closes every opened connection. Called once at process/suite
-// shutdown, mirroring how internal/runner's http.Client is shared for a
-// whole run rather than torn down per request.
+// Close closes every opened connection (both SQL and MongoDB). Called
+// once at process/suite shutdown, mirroring how internal/runner's
+// http.Client is shared for a whole run rather than torn down per
+// request.
 func (r *Registry) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, db := range r.conns {
 		_ = db.Close()
+	}
+	for _, c := range r.mongoClients {
+		// mongo.Client.Disconnect wants a context; Close itself has no
+		// caller-supplied one (it runs at shutdown, after the test
+		// suite's own ctx may already be done), so a short fixed
+		// timeout is used purely to bound how long process exit can be
+		// blocked by a slow/unreachable server.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = c.Disconnect(ctx)
+		cancel()
 	}
 }
 
@@ -85,6 +110,9 @@ func (r *Registry) get(name string) (*sql.DB, error) {
 	cfg, ok := r.dsns[name]
 	if !ok {
 		return nil, fmt.Errorf("no db connection named %q is configured (db.<connections>.%s in config.yaml)", name, name)
+	}
+	if isMongoDriver(cfg.Driver) {
+		return nil, fmt.Errorf("db connection %q is configured with driver %q (MongoDB) — use \"collection\"/\"filter\" in db.%s, not \"query\"", name, cfg.Driver, name)
 	}
 	driverName, err := registeredDriverName(cfg.Driver)
 	if err != nil {
@@ -216,6 +244,8 @@ func formatScanValue(v any) string {
 // user's string straight to sql.Open) so a typo in config.yaml produces a
 // clear "unsupported driver" config error instead of a generic
 // "sql: unknown driver" panic-adjacent message deep inside database/sql.
+// MongoDB is deliberately NOT one of the cases returned here — it is not
+// a database/sql driver at all (see isMongoDriver / getMongo instead).
 func registeredDriverName(name string) (string, error) {
 	switch strings.ToLower(name) {
 	case "sqlite", "sqlite3":
@@ -223,7 +253,18 @@ func registeredDriverName(name string) (string, error) {
 	case "postgres", "postgresql", "pgx":
 		return "pgx", nil
 	default:
-		return "", fmt.Errorf("unsupported db driver %q (supported: sqlite, postgres)", name)
+		return "", fmt.Errorf("unsupported db driver %q (supported: sqlite, postgres, mongodb)", name)
+	}
+}
+
+// isMongoDriver reports whether name selects the MongoDB connection
+// family rather than a database/sql one.
+func isMongoDriver(name string) bool {
+	switch strings.ToLower(name) {
+	case "mongodb", "mongo":
+		return true
+	default:
+		return false
 	}
 }
 

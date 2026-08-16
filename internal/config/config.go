@@ -38,7 +38,7 @@ type DBConfig struct {
 }
 
 type DBConnectionConfig struct {
-	Driver string `yaml:"driver"` // "sqlite" or "postgres"
+	Driver string `yaml:"driver"` // "sqlite", "postgres", or "mongodb"
 	DSN    string `yaml:"dsn"`
 }
 

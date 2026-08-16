@@ -210,6 +210,78 @@ func TestRun_FailFastSkipsRemaining(t *testing.T) {
 	}
 }
 
+func TestRun_GraphQLRequestPopulatesDisplayMethodAndName(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(200)
+		_, _ = w.Write([]byte(`{"data":{"users":[]}}`))
+	}))
+	defer ts.Close()
+
+	env := newTestEnv(t, ts)
+	tr := New(runner.New(), env, assertions.New(), nil)
+
+	want := 200
+	tc := domain.TestCase{
+		Name: "Users query",
+		File: "users.yaml",
+		Request: domain.RequestTemplate{
+			Method: "POST",
+			URL:    "{{base_url}}/graphql",
+			GraphQL: &domain.GraphQLTemplate{
+				Query:         "query Users { users { id } }",
+				OperationName: "Users",
+			},
+		},
+		Assert:  domain.AssertionSpec{Status: &domain.StatusSpec{Equals: &want}},
+		Timeout: 2 * time.Second,
+	}
+
+	report, err := tr.Run(context.Background(), []domain.TestCase{tc}, Options{Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(report.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(report.Results))
+	}
+	r := report.Results[0]
+	if r.DisplayMethod != "QUERY" {
+		t.Errorf("DisplayMethod = %q, want QUERY", r.DisplayMethod)
+	}
+	if r.DisplayName != "Users" {
+		t.Errorf("DisplayName = %q, want Users", r.DisplayName)
+	}
+	// The plain HTTP method/URL must still be populated too — reporters
+	// (and any consumer that predates DisplayMethod/DisplayName) rely on
+	// these remaining accurate.
+	if r.Method != "POST" {
+		t.Errorf("Method = %q, want POST", r.Method)
+	}
+}
+
+func TestRun_RESTRequestDisplayMethodMatchesPlainMethod(t *testing.T) {
+	// For a non-GraphQL request, DisplayColumns returns the method/URL
+	// unchanged -- confirm that still flows through correctly rather than
+	// being left blank.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	env := newTestEnv(t, ts)
+	tr := New(runner.New(), env, assertions.New(), nil)
+	tc := statusEqualsTest("t1", "GET", "{{base_url}}/x", 200)
+
+	report, err := tr.Run(context.Background(), []domain.TestCase{tc}, Options{Timeout: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	r := report.Results[0]
+	if r.DisplayMethod != "GET" {
+		t.Errorf("DisplayMethod = %q, want GET", r.DisplayMethod)
+	}
+}
+
 func TestRun_NoTestsReturnsConfigError(t *testing.T) {
 	env := newTestEnv(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
 	tr := New(runner.New(), env, assertions.New(), nil)

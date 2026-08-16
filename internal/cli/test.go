@@ -1,12 +1,18 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/sandeepv/apilens/pkg/apilens"
 	"github.com/spf13/cobra"
 )
 
 func newTestCommand(flags *globalFlags) *cobra.Command {
-	var method string
+	var (
+		method    string
+		out       string
+		outFormat string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "test <ref>",
@@ -22,10 +28,17 @@ func newTestCommand(flags *globalFlags) *cobra.Command {
 				Method:         method,
 				ReporterFormat: flags.format,
 				Quiet:          flags.quiet,
+				Out:            out,
+				OutFormat:      outFormat,
 			})
+			if err == nil && out != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Wrote report to", out)
+			}
 			return handleRunResult(cmd, report, err)
 		},
 	}
 	cmd.Flags().StringVar(&method, "method", "", "Required when multiple methods share the path")
+	cmd.Flags().StringVar(&out, "out", "", "Also write the report to this file (e.g. .apilens/reports/latest.json), independent of --format")
+	cmd.Flags().StringVar(&outFormat, "out-format", "", "Format for --out: json or junit (default: inferred from --out's extension, .xml -> junit)")
 	return cmd
 }

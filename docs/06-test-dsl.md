@@ -278,7 +278,9 @@ The author adds auth via the environment, not by pasting a live token into git.
 - JSON Schema
 - Regex
 - Array length
-- Database assertions (shipped later as `assert.db`)
+- Database assertions (shipped later as `assert.db` — see plan.md v9;
+  supports sqlite/postgres via `query`/`args`, and MongoDB via
+  `collection`/`filter`/`field`)
 - GraphQL subscriptions over WebSocket
 
 Chaining is the most requested follow-up. Design it as a later DSL version, not a silent v1 add-on.

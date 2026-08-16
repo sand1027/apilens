@@ -59,7 +59,9 @@ watch:
   path_prefix: ""
   ignore_extensions: [js, css, map, png, jpg, svg, woff2]
 
-# db.connections is opt-in (empty by default).
+# db.connections is opt-in (empty by default). Driver is "sqlite",
+# "postgres", or "mongodb". Run "apilens configure" to set this up
+# without hand-editing YAML.
 # db:
 #   connections:
 #     main:
@@ -72,6 +74,7 @@ const gitignoreSnippet = `
 .apilens/reports/
 .apilens/history/
 .apilens/.current-env
+.apilens/.secrets.env
 .apilens/environments/*.secrets.yaml
 `
 
