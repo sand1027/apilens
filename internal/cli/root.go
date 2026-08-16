@@ -47,6 +47,7 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(
 		newInitCommand(flags),
+		newConfigureCommand(flags),
 		newVersionCommand(),
 		newEnvCommand(flags),
 		newRunCommand(flags),

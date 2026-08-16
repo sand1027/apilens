@@ -6,6 +6,31 @@ Format: version, date, summary. Details live in [plan.md](plan.md).
 
 ## Unreleased
 
+`apilens run` and `apilens test <ref>` gained `--out <path>` (plus
+`--out-format json|junit`, inferred from the path's extension when
+omitted) to persist a report file on top of whatever prints to stdout —
+independent knobs, so `--quiet` or `--format terminal` on screen doesn't
+change what lands in the file. `.apilens/reports/` was already reserved
+for this in `apilens init`'s `.gitignore`; it just had nothing writing to
+it before now.
+
+`apilens configure` is a new command that sets up the auth token and a
+database connection without hand-editing YAML: `apilens configure --token
+"$AUTH_TOKEN" --db-driver sqlite --db-dsn "file:./app.db"` (or run with no
+flags for an interactive prompt). The token is written to
+`.apilens/environments/<env>.secrets.yaml`; the database DSN is persisted
+to a new gitignored `.apilens/.secrets.env` and referenced from
+`config.yaml` as `${DATABASE_URL}`, never as a literal value. Both files
+are loaded automatically on every subsequent command.
+
+`assert.db` now also supports MongoDB (`db.connections.<name>.driver:
+mongodb`), alongside sqlite/postgres. The YAML shape swaps `query`/`args`
+for `collection`/`filter` (a plain filter document) plus an optional
+`field` for `equals` checks (defaults to `_id`); `row_count_equals` and
+`exists` work the same as the SQL shape. A connection is either SQL-shaped
+or MongoDB-shaped, never both, and MongoDB DSNs must include a database
+name in their path (`mongodb://host:27017/mydb`).
+
 `apilens init` injects a live-hits chip into the product app (`app/layout.tsx`
 or `index.html`). The chip is a React overlay (bottom-left), not a script
 tag, so it shows even when `apilens ui` is down. With `apilens ui` on `:4488`

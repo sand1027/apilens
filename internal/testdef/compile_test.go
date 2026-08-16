@@ -143,3 +143,98 @@ assert:
 	}
 }
 
+func TestCompile_DBAssertionSQLShapeCompiles(t *testing.T) {
+	raw := []byte(`
+name: SQL db check
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  status:
+    equals: 200
+  db:
+    main:
+      query: "SELECT * FROM users WHERE id = 1"
+      exists: true
+`)
+	tc, err := Compile(raw, "db-sql.yaml")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	spec, ok := tc.Assert.DB["main"]
+	if !ok {
+		t.Fatal("expected db.main in compiled assertion spec")
+	}
+	if spec.Query == "" || spec.Collection != "" {
+		t.Errorf("spec = %+v, want SQL shape (Query set, Collection empty)", spec)
+	}
+}
+
+func TestCompile_DBAssertionMongoShapeCompiles(t *testing.T) {
+	raw := []byte(`
+name: Mongo db check
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  status:
+    equals: 200
+  db:
+    main:
+      collection: users
+      filter:
+        email: ada@example.com
+      exists: true
+`)
+	tc, err := Compile(raw, "db-mongo.yaml")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	spec, ok := tc.Assert.DB["main"]
+	if !ok {
+		t.Fatal("expected db.main in compiled assertion spec")
+	}
+	if spec.Collection != "users" || spec.Query != "" {
+		t.Errorf("spec = %+v, want MongoDB shape (Collection set, Query empty)", spec)
+	}
+	filter, ok := spec.Filter.(map[string]any)
+	if !ok || filter["email"] != "ada@example.com" {
+		t.Errorf("Filter = %#v", spec.Filter)
+	}
+}
+
+func TestCompile_DBAssertionCannotSetBothQueryAndCollection(t *testing.T) {
+	raw := []byte(`
+name: Bad db check
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  db:
+    main:
+      query: "SELECT 1"
+      collection: users
+      exists: true
+`)
+	_, err := Compile(raw, "bad-db.yaml")
+	if err == nil {
+		t.Fatal("expected an error when both query and collection are set on the same db.<connection> block")
+	}
+}
+
+func TestCompile_DBAssertionRequiresQueryOrCollection(t *testing.T) {
+	raw := []byte(`
+name: Bad db check
+request:
+  method: GET
+  url: "{{base_url}}/health"
+assert:
+  db:
+    main:
+      exists: true
+`)
+	_, err := Compile(raw, "bad-db.yaml")
+	if err == nil {
+		t.Fatal("expected an error when neither query nor collection is set")
+	}
+}

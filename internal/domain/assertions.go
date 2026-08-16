@@ -31,21 +31,41 @@ type GraphQLAssertSpec struct {
 	ErrorContains *string
 }
 
-// DBSpec is one db.<connection> assertion block (plan.md v9). Exactly one
-// of RowCountEquals / Exists / Equals should be set per query — testdef
-// does not enforce mutual exclusion here since a single query result can
-// reasonably be checked more than one way (e.g. both "exists" and an
-// "equals" on a specific column), but at least Query must always be set.
+// DBSpec is one db.<connection> assertion block (plan.md v9, extended for
+// MongoDB support). Exactly one of RowCountEquals / Exists / Equals should
+// be set per query — testdef does not enforce mutual exclusion here since
+// a single query result can reasonably be checked more than one way (e.g.
+// both "exists" and an "equals" on a specific column), but at least one of
+// Query or Collection must always be set (testdef.compileAssert enforces
+// that these two are also mutually exclusive with each other — a block is
+// either SQL-shaped or MongoDB-shaped, never both).
 type DBSpec struct {
+	// Query/Args are the SQL shape: a read-only SELECT (validated at
+	// Compile time by dbassert.ValidateReadOnly) plus its positional
+	// placeholder arguments.
 	Query string
 	Args  []any
-	// RowCountEquals asserts the query returns exactly this many rows.
+	// Collection/Filter are the MongoDB shape: a collection name plus a
+	// filter document (decoded from YAML as a plain map[string]any/
+	// []any/scalar tree, the same shape driver methods like
+	// Collection.Find already accept directly as a BSON-convertible
+	// filter).
+	Collection string
+	Filter     any
+	// Field names which document field Equals compares against
+	// (MongoDB only — the SQL shape instead compares the first column
+	// of Query's result row). Defaults to "_id" when Equals is set but
+	// Field is left blank.
+	Field string
+	// RowCountEquals asserts the query/filter returns exactly this many
+	// rows/documents.
 	RowCountEquals *int
-	// Exists asserts the query returns at least one row (true) or none
-	// (false).
+	// Exists asserts the query/filter returns at least one row/document
+	// (true) or none (false).
 	Exists *bool
-	// Equals asserts the first column of the first row, formatted as a
-	// string, equals this value's string form.
+	// Equals asserts the first column of the first row (SQL) or the
+	// named Field of the first matched document (MongoDB), formatted as
+	// a string, equals this value's string form.
 	Equals any
 }
 

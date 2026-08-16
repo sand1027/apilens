@@ -46,8 +46,9 @@ func (t *TerminalReporter) TestFinished(result domain.TestResult) {
 		return
 	}
 	mark := statusMark(result.Status)
+	method, name := displayFor(result)
 	fmt.Fprintf(t.out, "%s %-6s %-24s %-6d %dms\n",
-		mark, result.Method, result.URL, result.HTTPStatus, result.DurationMS)
+		mark, method, name, result.HTTPStatus, result.DurationMS)
 	if result.Status == domain.StatusFailed {
 		for _, a := range result.Assertions {
 			if !a.Passed {
@@ -59,6 +60,20 @@ func (t *TerminalReporter) TestFinished(result domain.TestResult) {
 	if result.Status == domain.StatusErrored {
 		fmt.Fprintf(t.out, "    error: %s\n", result.Error)
 	}
+}
+
+// displayFor prefers the GraphQL-aware label (e.g. "QUERY" / "Users") set
+// by internal/testrunner via internal/graphqlop.DisplayColumns, falling
+// back to the raw HTTP method/URL for results computed before a request
+// was ever interpolated (e.g. skippedResult, or a domain.TestResult built
+// by hand in a test) — for a plain REST request, DisplayColumns already
+// returns the method/URL unchanged, so there is no separate "REST case"
+// to handle here.
+func displayFor(result domain.TestResult) (method, name string) {
+	if result.DisplayMethod != "" {
+		return result.DisplayMethod, result.DisplayName
+	}
+	return string(result.Method), result.URL
 }
 
 func reasonSuffix(reason string) string {

@@ -20,9 +20,11 @@ const dbQueryTimeout = 5 * time.Second
 // to be meaningfully checkable per compiled check; if more than one is
 // set, all are evaluated and ALL must pass (same "every set field is
 // independently checked" convention json.* assertions already use).
+// testdef.compileAssert already guarantees exactly one of Query/Collection
+// is set before this is ever called.
 func newDBCheck(connName string, spec domain.DBSpec, reg *dbassert.Registry) (domain.Check, error) {
-	if spec.Query == "" {
-		return nil, fmt.Errorf("db.%s requires a \"query\"", connName)
+	if spec.Query == "" && spec.Collection == "" {
+		return nil, fmt.Errorf("db.%s requires either \"query\" or \"collection\"", connName)
 	}
 	return dbCheck{connName: connName, spec: spec, reg: reg}, nil
 }
@@ -40,6 +42,14 @@ func (c dbCheck) Eval(ex domain.Exchange) domain.AssertionResult {
 	ctx, cancel := context.WithTimeout(context.Background(), dbQueryTimeout)
 	defer cancel()
 
+	if c.spec.Collection != "" {
+		return c.evalMongo(ctx)
+	}
+	return c.evalSQL(ctx)
+}
+
+// evalSQL handles the sqlite/postgres shape (Query/Args).
+func (c dbCheck) evalSQL(ctx context.Context) domain.AssertionResult {
 	if c.spec.RowCountEquals != nil {
 		count, err := c.reg.RowCount(ctx, c.connName, c.spec.Query, c.spec.Args...)
 		if err != nil {
@@ -93,6 +103,61 @@ func (c dbCheck) Eval(ex domain.Exchange) domain.AssertionResult {
 	// misbehaving/erroring query is still caught), but there is nothing
 	// to compare, which is itself a config-shaped problem the author
 	// should fix.
+	return domain.AssertionResult{
+		Kind: domain.KindDBRowCount, Target: c.connName, Passed: false,
+		Reason: fmt.Sprintf("db.%s sets no expectation (row_count_equals, exists, or equals)", c.connName),
+	}
+}
+
+// evalMongo handles the MongoDB shape (Collection/Filter/Field). Mirrors
+// evalSQL's structure exactly, just calling the *Mongo registry methods
+// instead — every AssertionKind/reporting shape stays identical between
+// the two so db.* results look the same in reports regardless of which
+// database engine is behind a connection.
+func (c dbCheck) evalMongo(ctx context.Context) domain.AssertionResult {
+	if c.spec.RowCountEquals != nil {
+		count, err := c.reg.RowCountMongo(ctx, c.connName, c.spec.Collection, c.spec.Filter)
+		if err != nil {
+			return dbErrorResult(domain.KindDBRowCount, c.connName, err)
+		}
+		want := *c.spec.RowCountEquals
+		return domain.AssertionResult{
+			Kind: domain.KindDBRowCount, Target: c.connName, Passed: count == want,
+			Expected: fmt.Sprintf("%d document(s)", want), Actual: fmt.Sprintf("%d document(s)", count),
+		}
+	}
+
+	if c.spec.Exists != nil {
+		count, err := c.reg.RowCountMongo(ctx, c.connName, c.spec.Collection, c.spec.Filter)
+		if err != nil {
+			return dbErrorResult(domain.KindDBExists, c.connName, err)
+		}
+		found := count > 0
+		want := *c.spec.Exists
+		return domain.AssertionResult{
+			Kind: domain.KindDBExists, Target: c.connName, Passed: found == want,
+			Expected: fmt.Sprintf("%v", want), Actual: fmt.Sprintf("%v", found),
+		}
+	}
+
+	if c.spec.Equals != nil {
+		val, found, err := c.reg.FirstValueMongo(ctx, c.connName, c.spec.Collection, c.spec.Filter, c.spec.Field)
+		if err != nil {
+			return dbErrorResult(domain.KindDBEquals, c.connName, err)
+		}
+		want := fmt.Sprintf("%v", c.spec.Equals)
+		if !found {
+			return domain.AssertionResult{
+				Kind: domain.KindDBEquals, Target: c.connName, Passed: false,
+				Expected: want, Reason: "filter matched no documents",
+			}
+		}
+		return domain.AssertionResult{
+			Kind: domain.KindDBEquals, Target: c.connName, Passed: val == want,
+			Expected: want, Actual: val,
+		}
+	}
+
 	return domain.AssertionResult{
 		Kind: domain.KindDBRowCount, Target: c.connName, Passed: false,
 		Reason: fmt.Sprintf("db.%s sets no expectation (row_count_equals, exists, or equals)", c.connName),

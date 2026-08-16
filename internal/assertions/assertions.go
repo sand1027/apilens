@@ -133,9 +133,17 @@ func (e *Engine) Compile(spec domain.AssertionSpec) (domain.AssertionSet, error)
 	}
 
 	for connName, d := range spec.DB {
-		if err := dbassert.ValidateReadOnly(d.Query); err != nil {
-			return domain.AssertionSet{}, domain.NewConfigError(
-				fmt.Sprintf("compiling db.%s", connName), err)
+		// Only the SQL shape (Query set) needs the read-only keyword
+		// scan — a MongoDB db.<connection>.filter block (Collection
+		// set) has no SQL string to validate; it can only ever express
+		// a read (Collection.Find/CountDocuments/FindOne), never a
+		// write, since dbassert.mongo.go never calls
+		// InsertOne/UpdateOne/DeleteOne etc.
+		if d.Query != "" {
+			if err := dbassert.ValidateReadOnly(d.Query); err != nil {
+				return domain.AssertionSet{}, domain.NewConfigError(
+					fmt.Sprintf("compiling db.%s", connName), err)
+			}
 		}
 		if e.dbRegistry == nil {
 			return domain.AssertionSet{}, domain.NewConfigError(

@@ -22,6 +22,7 @@ import (
 	"github.com/sandeepv/apilens/internal/registry"
 	"github.com/sandeepv/apilens/internal/reporter"
 	"github.com/sandeepv/apilens/internal/runner"
+	"github.com/sandeepv/apilens/internal/secrets"
 	"github.com/sandeepv/apilens/internal/testdef"
 	"github.com/sandeepv/apilens/internal/testrunner"
 )
@@ -65,6 +66,17 @@ func New(opts Options) (*App, error) {
 	}
 	if opts.EnvDir == "" {
 		opts.EnvDir = filepath.Join(opts.ProjectDir, ".apilens", "environments")
+	}
+
+	// Load any values persisted by `apilens configure` (AUTH_TOKEN,
+	// DATABASE_URL, ...) into the process environment before config.Load
+	// or environment.LoadDir run, so "${VAR}" placeholders already used
+	// throughout config.yaml / environment files resolve without the
+	// user re-exporting them in every shell. An already-exported OS env
+	// var always wins (secrets.Load never overwrites one) -- see
+	// internal/secrets' package doc.
+	if err := secrets.Load(secrets.Path(opts.ProjectDir)); err != nil {
+		return nil, err
 	}
 
 	cfg, err := config.Load(opts.ConfigPath)
@@ -179,6 +191,20 @@ type RunFilter struct {
 	// (docs/05-cli.md's global --quiet: "Errors only"). No effect on
 	// json/junit, which already buffer and emit once.
 	Quiet bool
+	// Out, when set, additionally writes the report to this file path
+	// (docs/05-cli.md "apilens run --out <path>") on top of whatever
+	// ReporterFormat prints to stdout — the two are independent so a
+	// developer can watch terminal output live while also persisting a
+	// json/junit copy for CI artifacts or later comparison. The
+	// .apilens/reports/ directory is already reserved for this in
+	// `apilens init`'s .gitignore snippet.
+	Out string
+	// OutFormat selects the format written to Out ("json" or "junit").
+	// Empty infers from Out's extension (.json -> json, .xml -> junit),
+	// defaulting to json if the extension is unrecognized — never
+	// "terminal", since a terminal-formatted file is not machine-parsable
+	// and defeats the point of writing one.
+	OutFormat string
 }
 
 // RunSuite loads tests from .apilens/tests, applies filter, and executes

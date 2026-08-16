@@ -80,11 +80,18 @@ type graphqlAssertDoc struct {
 }
 
 type dbDoc struct {
-	Query          string `yaml:"query"`
-	Args           []any  `yaml:"args"`
-	RowCountEquals *int   `yaml:"row_count_equals"`
-	Exists         *bool  `yaml:"exists"`
-	Equals         any    `yaml:"equals"`
+	// Query/Args are the SQL (sqlite/postgres) shape.
+	Query string `yaml:"query"`
+	Args  []any  `yaml:"args"`
+	// Collection/Filter/Field are the MongoDB shape — mutually
+	// exclusive with Query/Args (testdef.compileAssert enforces this).
+	Collection string `yaml:"collection"`
+	Filter     any    `yaml:"filter"`
+	Field      string `yaml:"field"`
+	// Shared expectations, usable with either shape above.
+	RowCountEquals *int  `yaml:"row_count_equals"`
+	Exists         *bool `yaml:"exists"`
+	Equals         any   `yaml:"equals"`
 }
 
 type statusDoc struct {

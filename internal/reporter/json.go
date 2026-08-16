@@ -48,15 +48,22 @@ type jsonAssertion struct {
 }
 
 type jsonResult struct {
-	Name       string          `json:"name"`
-	File       string          `json:"file"`
-	Status     string          `json:"status"`
-	Method     string          `json:"method"`
-	URL        string          `json:"url"`
-	HTTPStatus int             `json:"http_status"`
-	DurationMS int64           `json:"duration_ms"`
-	Assertions []jsonAssertion `json:"assertions,omitempty"`
-	Error      string          `json:"error,omitempty"`
+	Name string `json:"name"`
+	File string `json:"file"`
+	// DisplayMethod/DisplayName give a GraphQL-aware label (e.g. "QUERY" /
+	// "Users") alongside the plain HTTP Method/URL — kept as separate
+	// fields rather than replacing Method/URL so existing consumers of
+	// this JSON schema (docs/11-risks-and-gaps.md G25) do not lose the
+	// raw values.
+	DisplayMethod string          `json:"display_method,omitempty"`
+	DisplayName   string          `json:"display_name,omitempty"`
+	Status        string          `json:"status"`
+	Method        string          `json:"method"`
+	URL           string          `json:"url"`
+	HTTPStatus    int             `json:"http_status"`
+	DurationMS    int64           `json:"duration_ms"`
+	Assertions    []jsonAssertion `json:"assertions,omitempty"`
+	Error         string          `json:"error,omitempty"`
 }
 
 type jsonDocument struct {
@@ -82,15 +89,17 @@ func (j *JSONReporter) SuiteFinished(report domain.Report) error {
 			})
 		}
 		results = append(results, jsonResult{
-			Name:       r.Name,
-			File:       r.File,
-			Status:     string(r.Status),
-			Method:     string(r.Method),
-			URL:        r.URL,
-			HTTPStatus: r.HTTPStatus,
-			DurationMS: r.DurationMS,
-			Assertions: assertions,
-			Error:      r.Error,
+			Name:          r.Name,
+			File:          r.File,
+			DisplayMethod: r.DisplayMethod,
+			DisplayName:   r.DisplayName,
+			Status:        string(r.Status),
+			Method:        string(r.Method),
+			URL:           r.URL,
+			HTTPStatus:    r.HTTPStatus,
+			DurationMS:    r.DurationMS,
+			Assertions:    assertions,
+			Error:         r.Error,
 		})
 	}
 	doc := jsonDocument{

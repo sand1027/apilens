@@ -29,6 +29,9 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 		loadDuration   string
 		loadIterations int
 		loadWorkers    int
+
+		out       string
+		outFormat string
 	)
 
 	cmd := &cobra.Command{
@@ -49,6 +52,8 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 				FailFast:       failFast,
 				ReporterFormat: flags.format,
 				Quiet:          flags.quiet,
+				Out:            out,
+				OutFormat:      outFormat,
 			}
 
 			if load {
@@ -71,6 +76,9 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 			}
 
 			report, err := eng.Run(cmd.Context(), runFilter)
+			if err == nil && out != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "Wrote report to", out)
+			}
 			return handleRunResult(cmd, report, err)
 		},
 	}
@@ -84,6 +92,8 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 	cmd.Flags().StringVar(&loadDuration, "duration", "", "Load mode: wall-clock bound, e.g. \"30s\" (requires --load; --duration and/or --iterations)")
 	cmd.Flags().IntVar(&loadIterations, "iterations", 0, "Load mode: total request bound across all workers (requires --load)")
 	cmd.Flags().IntVar(&loadWorkers, "workers", 0, "Load mode: concurrent workers (default 10, requires --load)")
+	cmd.Flags().StringVar(&out, "out", "", "Also write the report to this file (e.g. .apilens/reports/latest.json), independent of --format")
+	cmd.Flags().StringVar(&outFormat, "out-format", "", "Format for --out: json or junit (default: inferred from --out's extension, .xml -> junit)")
 	return cmd
 }
 

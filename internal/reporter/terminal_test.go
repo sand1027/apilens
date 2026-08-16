@@ -49,6 +49,40 @@ func TestTerminalReporter_QuietSuppressesPassingAndSkipped(t *testing.T) {
 	}
 }
 
+func TestTerminalReporter_UsesGraphQLDisplayLabelWhenSet(t *testing.T) {
+	var buf bytes.Buffer
+	rep := NewTerminal(&buf)
+	rep.Start(domain.SuiteMeta{})
+	rep.TestFinished(domain.TestResult{
+		Name: "Users query", Status: domain.StatusPassed,
+		Method: "POST", URL: "http://localhost:3000/graphql",
+		DisplayMethod: "QUERY", DisplayName: "Users",
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "QUERY") || !strings.Contains(out, "Users") {
+		t.Errorf("expected the GraphQL operation label to be printed, got: %s", out)
+	}
+	if strings.Contains(out, "/graphql") {
+		t.Errorf("expected the raw URL to be replaced by the operation label, got: %s", out)
+	}
+}
+
+func TestTerminalReporter_FallsBackToMethodAndURLWhenDisplayUnset(t *testing.T) {
+	var buf bytes.Buffer
+	rep := NewTerminal(&buf)
+	rep.Start(domain.SuiteMeta{})
+	rep.TestFinished(domain.TestResult{
+		Name: "Health", Status: domain.StatusPassed,
+		Method: "GET", URL: "http://localhost:3000/health",
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "GET") || !strings.Contains(out, "http://localhost:3000/health") {
+		t.Errorf("expected the plain method/URL to be printed when no display label is set, got: %s", out)
+	}
+}
+
 func TestTerminalReporter_QuietStillPrintsSummary(t *testing.T) {
 	var buf bytes.Buffer
 	rep := NewTerminal(&buf)

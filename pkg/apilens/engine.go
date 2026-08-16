@@ -6,6 +6,10 @@ package apilens
 
 import (
 	"context"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/sandeepv/apilens/internal/app"
@@ -409,7 +413,9 @@ func (e *engine) Inspect(ctx context.Context, ref InspectRef) (*Inspection, erro
 
 // Run executes the test suite (or filtered subset) and returns the report.
 // It selects the reporter implied by filter.ReporterFormat, defaulting to
-// the configured testing.reporter.
+// the configured testing.reporter. If filter.Out is set, the report is
+// additionally written to that file path (docs/05-cli.md "apilens run
+// --out <path>"), independent of what prints to stdout.
 func (e *engine) Run(ctx context.Context, filter RunFilter) (*Report, error) {
 	format := filter.ReporterFormat
 	if format == "" {
@@ -427,11 +433,54 @@ func (e *engine) Run(ctx context.Context, filter RunFilter) (*Report, error) {
 			quieter.SetQuiet(true)
 		}
 	}
+
+	if filter.Out != "" {
+		f, err := createReportFile(filter.Out)
+		if err != nil {
+			return nil, domain.NewConfigError("opening --out file "+filter.Out, err)
+		}
+		defer f.Close()
+		fileRep := reporterForFile(filter.Out, filter.OutFormat, f)
+		rep = reporter.Multi(rep, fileRep)
+	}
+
 	report, err := e.app.RunSuite(ctx, filter, rep)
 	if err != nil {
 		return nil, err
 	}
 	return &report, nil
+}
+
+// reporterForFile builds the reporter that writes to f, choosing json vs.
+// junit from explicitFormat if given, otherwise from path's extension
+// (".xml" -> junit, everything else -> json — json is the safer default
+// since it is always parsable, unlike junit which assumes a CI XML
+// consumer).
+func reporterForFile(path, explicitFormat string, f io.Writer) reporter.Reporter {
+	format := strings.ToLower(explicitFormat)
+	if format == "" {
+		if strings.EqualFold(filepath.Ext(path), ".xml") {
+			format = "junit"
+		} else {
+			format = "json"
+		}
+	}
+	if format == "junit" {
+		return reporter.NewJUnit(f)
+	}
+	return reporter.NewJSON(f)
+}
+
+// createReportFile opens path for writing, creating its parent directory
+// if needed (docs/05-cli.md: --out should work the first time even
+// against a not-yet-created .apilens/reports/ directory).
+func createReportFile(path string) (*os.File, error) {
+	if dir := filepath.Dir(path); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	return os.Create(path)
 }
 
 func (e *engine) Watch(ctx context.Context, opts WatchOptions) (*WatchSession, error) {

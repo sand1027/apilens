@@ -15,15 +15,25 @@ const (
 // TestResult is what a single TestCase produced. Reporters format this;
 // they never recompute pass/fail.
 type TestResult struct {
-	Name       string
-	File       string
-	Status     TestStatus
-	Method     Method
-	URL        string
-	HTTPStatus int
-	DurationMS int64
-	Assertions []AssertionResult
-	Error      string // populated when Status == errored
+	Name   string
+	File   string
+	Status TestStatus
+	Method Method
+	URL    string
+	// DisplayMethod/DisplayName are the same GraphQL-aware label
+	// internal/graphqlop.DisplayColumns already computes for `watch` /
+	// `history list` (e.g. "QUERY" / "Users" instead of "POST" /
+	// "http://host/graphql") — populated here too so `apilens run`'s
+	// terminal output shows the operation name for GraphQL tests instead
+	// of every row looking like an indistinguishable "POST /graphql".
+	// Both fall back to Method/URL for non-GraphQL requests, so callers
+	// that only care about "some human label" never need a nil check.
+	DisplayMethod string
+	DisplayName   string
+	HTTPStatus    int
+	DurationMS    int64
+	Assertions    []AssertionResult
+	Error         string // populated when Status == errored
 }
 
 // Counts summarizes a Report for the terminal footer and JSON `counts`.
