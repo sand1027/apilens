@@ -54,6 +54,7 @@ func NewRootCommand() *cobra.Command {
 		newTestCommand(flags),
 		newDiscoverCommand(flags),
 		newListCommand(flags),
+		newCoverageCommand(flags),
 		newInspectCommand(flags),
 		newWatchCommand(flags),
 		newHistoryCommand(flags),

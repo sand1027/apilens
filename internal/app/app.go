@@ -23,6 +23,7 @@ import (
 	"github.com/sandeepv/apilens/internal/reporter"
 	"github.com/sandeepv/apilens/internal/runner"
 	"github.com/sandeepv/apilens/internal/secrets"
+	"github.com/sandeepv/apilens/internal/security"
 	"github.com/sandeepv/apilens/internal/testdef"
 	"github.com/sandeepv/apilens/internal/testrunner"
 )
@@ -205,6 +206,12 @@ type RunFilter struct {
 	// "terminal", since a terminal-formatted file is not machine-parsable
 	// and defeats the point of writing one.
 	OutFormat string
+	// CaptureResponse attaches each test's actual (redacted) response
+	// body/headers to its TestResult (`apilens run --capture-response`) —
+	// the same "show me the data" capability Postman's collection runner
+	// has always had. Off by default; see testrunner.WithCaptureResponse's
+	// doc comment for why this must always be opt-in.
+	CaptureResponse bool
 }
 
 // RunSuite loads tests from .apilens/tests, applies filter, and executes
@@ -232,7 +239,15 @@ func (a *App) RunSuite(ctx context.Context, filter RunFilter, out reporter.Repor
 	assertEngine, closeDB := a.buildAssertEngine()
 	defer closeDB()
 
-	tr := testrunner.New(httpRunner, a.Env, assertEngine, out)
+	var trOpts []testrunner.RunnerOption
+	if filter.CaptureResponse {
+		redactor := security.New(security.Config{
+			CaptureSensitiveHeaders: a.Config.Security.CaptureSensitiveHeaders,
+			ExtraSensitiveHeaders:   a.Config.Security.SensitiveHeaders,
+		})
+		trOpts = append(trOpts, testrunner.WithCaptureResponse(redactor))
+	}
+	tr := testrunner.New(httpRunner, a.Env, assertEngine, out, trOpts...)
 
 	opts := testrunner.Options{
 		Parallel: a.Config.Testing.Parallel,

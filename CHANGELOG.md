@@ -6,6 +6,47 @@ Format: version, date, summary. Details live in [plan.md](plan.md).
 
 ## Unreleased
 
+`apilens coverage` is a new command that cross-references the registry
+(from the last `apilens discover`) against every compiled test under
+`.apilens/tests`, reporting which discovered endpoints/GraphQL operations
+have at least one test and which have none — `apilens coverage
+--missing-only` lists just the gaps, `--format json` gives the same data
+machine-readably. Matches by the same `EndpointID` identity `apilens
+test <ref>` already uses (REST paths matched param-aware, e.g. a test
+hitting `/api/users/1` covers a registry entry for `/api/users/:id`;
+GraphQL operations matched by parsing the test's own query). Read-only —
+never runs a test or makes a network call, so it's safe to run anytime.
+
+`apilens run` and `apilens test <ref>` gained `--capture-response`, which
+attaches each test's actual response body/headers to the report — the
+same "show me the data" capability Postman's collection runner has always
+had. Off by default (a captured body is strictly more data exposure than
+a bare pass/fail summary); when enabled, the body/headers are redacted
+through the same `internal/security.Redactor` every other display/report
+path already uses, so a captured JSON report never contains a raw
+password/token/cookie even though it does contain everything else. The
+`--out json` schema embeds a JSON response body as native structure
+(not an escaped string) so a captured report is directly navigable.
+
+`assert:` gained a sibling `cleanup:` block for test-data teardown:
+```yaml
+cleanup:
+  db:
+    main:
+      collection: advances
+      filter:
+        _id: "{{response.body.data.createAdvance._id}}"
+```
+Runs after a test finishes — pass, fail, or error — deleting whatever
+record(s) a mutation test created, using a new `{{response.<field>}}`
+placeholder (distinct from DSL v2's `{{responses.<id>...}}` chaining,
+which only lets a later test reference an earlier one — cleanup needs a
+test referencing its own just-completed response). The one place in
+`internal/dbassert` allowed to mutate a database at all; every other
+path (`assert.db`, `--db-hints`) remains strictly read-only by
+construction. An empty `filter` is rejected at compile time, since it
+would otherwise delete every document in the collection.
+
 `apilens run` and `apilens test <ref>` gained `--out <path>` (plus
 `--out-format json|junit`, inferred from the path's extension when
 omitted) to persist a report file on top of whatever prints to stdout —

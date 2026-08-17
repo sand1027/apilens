@@ -18,6 +18,7 @@ import (
 	"github.com/sandeepv/apilens/internal/graphqlop"
 	"github.com/sandeepv/apilens/internal/reporter"
 	"github.com/sandeepv/apilens/internal/runner"
+	"github.com/sandeepv/apilens/internal/security"
 )
 
 // Options mirrors docs/04-interfaces.md section 8.
@@ -35,12 +36,36 @@ type Runner struct {
 	env    *environment.Resolver
 	assert *assertions.Engine
 	rep    reporter.Reporter
+
+	captureResponse bool
+	redactor        *security.Redactor
+}
+
+// RunnerOption configures optional Runner behavior not needed by every
+// caller (mirrors internal/runner's own functional-option pattern).
+type RunnerOption func(*Runner)
+
+// WithCaptureResponse makes every domain.TestResult carry the actual
+// response body/headers it received (redacted through redactor first),
+// the same capability Postman's collection runner has always had (`apilens
+// run --capture-response`, docs/05-cli.md). Off by default: a response
+// body is strictly more data in a report file than a bare pass/fail
+// summary, redacted or not, so this must be requested, never implicit.
+func WithCaptureResponse(redactor *security.Redactor) RunnerOption {
+	return func(r *Runner) {
+		r.captureResponse = true
+		r.redactor = redactor
+	}
 }
 
 // New builds a testrunner.Runner. rep may be nil if the caller only needs
 // the Report and does not want incremental output.
-func New(httpRunner *runner.Runner, env *environment.Resolver, assertEngine *assertions.Engine, rep reporter.Reporter) *Runner {
-	return &Runner{http: httpRunner, env: env, assert: assertEngine, rep: rep}
+func New(httpRunner *runner.Runner, env *environment.Resolver, assertEngine *assertions.Engine, rep reporter.Reporter, opts ...RunnerOption) *Runner {
+	r := &Runner{http: httpRunner, env: env, assert: assertEngine, rep: rep}
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // Run executes every test in tests according to opts and returns the
@@ -235,6 +260,7 @@ func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) d
 
 	base.HTTPStatus = ex.Response.StatusCode
 	base.DurationMS = ex.Timing.Duration.Milliseconds()
+	r.captureResponseInto(&base, ex)
 
 	// Record BEFORE evaluating assertions so a later chained test can use
 	// this response even if this test's own assertions fail — chaining is
@@ -256,6 +282,30 @@ func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) d
 
 	base.CleanupResults = r.runCleanup(ctx, tc, ex)
 	return base
+}
+
+// captureResponseInto redacts and attaches ex's response body/headers to
+// result, when WithCaptureResponse was configured. No-op otherwise (the
+// fields stay nil, same as before this feature existed). Uses
+// r.redactor.DisplayHeaders/Body — the SAME masking every other
+// display/report path in this codebase applies (docs/09-security.md,
+// ADR-006) — never the raw, unmasked Headers()/body a caller opted into
+// capturing internally (e.g. proxy's own use of CaptureSensitiveHeaders
+// for replay is a different, narrower opt-in than this one; a captured
+// test report is always masked, with no equivalent override, since a
+// report file is far more likely to be shared/committed than an
+// in-memory replay).
+func (r *Runner) captureResponseInto(result *domain.TestResult, ex domain.Exchange) {
+	if !r.captureResponse {
+		return
+	}
+	redactor := r.redactor
+	if redactor == nil {
+		redactor = security.New(security.Config{})
+	}
+	contentType := ex.Response.Headers.Get("Content-Type")
+	result.ResponseBody = redactor.Body(contentType, ex.Response.Body)
+	result.ResponseHeaders = redactor.DisplayHeaders(ex.Response.Headers)
 }
 
 // runCleanup executes tc.Cleanup's db targets against the connections
