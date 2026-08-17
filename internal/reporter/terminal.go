@@ -60,6 +60,13 @@ func (t *TerminalReporter) TestFinished(result domain.TestResult) {
 	if result.Status == domain.StatusErrored {
 		fmt.Fprintf(t.out, "    error: %s\n", result.Error)
 	}
+	for _, c := range result.CleanupResults {
+		if c.Error != "" {
+			fmt.Fprintf(t.out, "    cleanup %s.%s: FAILED (%s) — leftover test data may remain\n", c.Connection, c.Collection, c.Error)
+		} else if !t.quiet {
+			fmt.Fprintf(t.out, "    cleanup %s.%s: removed %d document(s)\n", c.Connection, c.Collection, c.DeletedCount)
+		}
+	}
 }
 
 // displayFor prefers the GraphQL-aware label (e.g. "QUERY" / "Users") set

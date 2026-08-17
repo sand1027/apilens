@@ -54,8 +54,8 @@ func TestEngine_DBRowCountEquals_Passes(t *testing.T) {
 	e := New(WithDBRegistry(reg))
 	want := 1
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT * FROM users WHERE id = 1", RowCountEquals: &want},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT * FROM users WHERE id = 1", RowCountEquals: &want}},
 		},
 	})
 	if err != nil {
@@ -72,8 +72,8 @@ func TestEngine_DBRowCountEquals_Fails(t *testing.T) {
 	e := New(WithDBRegistry(reg))
 	want := 5
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT * FROM users", RowCountEquals: &want},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT * FROM users", RowCountEquals: &want}},
 		},
 	})
 	if err != nil {
@@ -90,8 +90,8 @@ func TestEngine_DBExists_TrueAndFalse(t *testing.T) {
 	e := New(WithDBRegistry(reg))
 	yes := true
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT * FROM users WHERE id = 1", Exists: &yes},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT * FROM users WHERE id = 1", Exists: &yes}},
 		},
 	})
 	if err != nil {
@@ -103,8 +103,8 @@ func TestEngine_DBExists_TrueAndFalse(t *testing.T) {
 	}
 
 	set2, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT * FROM users WHERE id = 999", Exists: &yes},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT * FROM users WHERE id = 999", Exists: &yes}},
 		},
 	})
 	if err != nil {
@@ -120,8 +120,8 @@ func TestEngine_DBEquals_ComparesScalarValue(t *testing.T) {
 	reg := newSharedMemoryRegistry(t)
 	e := New(WithDBRegistry(reg))
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT name FROM users WHERE id = 1", Equals: "ada"},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT name FROM users WHERE id = 1", Equals: "ada"}},
 		},
 	})
 	if err != nil {
@@ -138,8 +138,8 @@ func TestEngine_DBAssertion_RejectsMutatingQueryAtCompileTime(t *testing.T) {
 	e := New(WithDBRegistry(reg))
 	want := 1
 	_, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "DELETE FROM users", RowCountEquals: &want},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "DELETE FROM users", RowCountEquals: &want}},
 		},
 	})
 	if err == nil {
@@ -151,8 +151,8 @@ func TestEngine_DBAssertion_WithoutRegistryIsConfigError(t *testing.T) {
 	e := New() // no WithDBRegistry
 	want := 1
 	_, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT 1", RowCountEquals: &want},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT 1", RowCountEquals: &want}},
 		},
 	})
 	if err == nil {
@@ -165,8 +165,8 @@ func TestEngine_DBAssertion_QueryErrorSurfacesAsAssertionFailureNotPanic(t *test
 	e := New(WithDBRegistry(reg))
 	want := 1
 	set, err := e.Compile(domain.AssertionSpec{
-		DB: map[string]domain.DBSpec{
-			"main": {Query: "SELECT * FROM nonexistent_table", RowCountEquals: &want},
+		DB: map[string][]domain.DBSpec{
+			"main": {{Query: "SELECT * FROM nonexistent_table", RowCountEquals: &want}},
 		},
 	})
 	if err != nil {

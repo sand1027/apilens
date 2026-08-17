@@ -220,17 +220,25 @@ type ReplayOverrides struct {
 	Body    []byte
 }
 
-// GenerateOptions mirrors generate.Options (v4).
+// GenerateOptions mirrors generate.Options (v4), plus the db-hints choice
+// added alongside MongoDB support (see app.GenerateOptions's doc comment
+// for why that flag lives at the App layer, not generate's).
 type GenerateOptions struct {
 	Out   string
 	Force bool
+	// DBHints derives assert.db checks from the captured response's
+	// "__typename"/"_id" fields, verified against a real db connection
+	// before being written (`apilens generate --db-hints`).
+	DBHints      bool
+	DBConnection string
 }
 
 // GeneratedTest mirrors generate.Generated (v4).
 type GeneratedTest struct {
-	Path    string
-	Content []byte
-	Test    domain.TestCase
+	Path         string
+	Content      []byte
+	Test         domain.TestCase
+	SkippedHints []string
 }
 
 // SpecExportOptions configures Engine.SpecExport (v7).
@@ -519,11 +527,15 @@ func (e *engine) Replay(ctx context.Context, id int, overrides ReplayOverrides) 
 }
 
 func (e *engine) Generate(id int, opts GenerateOptions) (*GeneratedTest, error) {
-	result, err := e.app.Generate(id, generate.Options{Out: opts.Out, Force: opts.Force})
+	result, err := e.app.Generate(id, app.GenerateOptions{
+		Options:      generate.Options{Out: opts.Out, Force: opts.Force},
+		DBHints:      opts.DBHints,
+		DBConnection: opts.DBConnection,
+	})
 	if err != nil {
 		return nil, err
 	}
-	return &GeneratedTest{Path: result.Path, Content: result.Content, Test: result.Test}, nil
+	return &GeneratedTest{Path: result.Path, Content: result.Content, Test: result.Test, SkippedHints: result.SkippedHints}, nil
 }
 
 func (e *engine) History(limit int) ([]domain.Exchange, error) {

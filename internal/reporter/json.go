@@ -47,6 +47,17 @@ type jsonAssertion struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+// jsonCleanup mirrors domain.CleanupResult. A separate shape from
+// jsonAssertion (rather than reusing it) because "passed" has no
+// meaning for a cleanup step — only whether it errored and how many
+// documents were removed.
+type jsonCleanup struct {
+	Connection   string `json:"connection"`
+	Collection   string `json:"collection"`
+	DeletedCount int    `json:"deleted_count"`
+	Error        string `json:"error,omitempty"`
+}
+
 type jsonResult struct {
 	Name string `json:"name"`
 	File string `json:"file"`
@@ -64,6 +75,7 @@ type jsonResult struct {
 	DurationMS    int64           `json:"duration_ms"`
 	Assertions    []jsonAssertion `json:"assertions,omitempty"`
 	Error         string          `json:"error,omitempty"`
+	Cleanup       []jsonCleanup   `json:"cleanup,omitempty"`
 }
 
 type jsonDocument struct {
@@ -88,6 +100,15 @@ func (j *JSONReporter) SuiteFinished(report domain.Report) error {
 				Reason:   a.Reason,
 			})
 		}
+		var cleanup []jsonCleanup
+		for _, c := range r.CleanupResults {
+			cleanup = append(cleanup, jsonCleanup{
+				Connection:   c.Connection,
+				Collection:   c.Collection,
+				DeletedCount: c.DeletedCount,
+				Error:        c.Error,
+			})
+		}
 		results = append(results, jsonResult{
 			Name:          r.Name,
 			File:          r.File,
@@ -100,6 +121,7 @@ func (j *JSONReporter) SuiteFinished(report domain.Report) error {
 			DurationMS:    r.DurationMS,
 			Assertions:    assertions,
 			Error:         r.Error,
+			Cleanup:       cleanup,
 		})
 	}
 	doc := jsonDocument{

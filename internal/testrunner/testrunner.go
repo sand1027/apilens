@@ -7,6 +7,7 @@ package testrunner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -220,6 +221,15 @@ func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) d
 		if tc.ID != "" {
 			r.env.RecordResponse(tc.ID, ex)
 		}
+		// Cleanup still runs on a transport error: a request can time
+		// out (or the connection can drop) AFTER the server already
+		// committed the write it was asked to make — exactly the
+		// scenario that most needs teardown, since the caller never even
+		// saw a response to know the record exists. Any cleanup filter
+		// that references "{{response....}}" will itself fail cleanly
+		// (there is no response body to resolve it against) and that
+		// failure is reported per-target rather than silently skipped.
+		base.CleanupResults = r.runCleanup(ctx, tc, ex)
 		return base
 	}
 
@@ -243,7 +253,71 @@ func (r *Runner) runOne(ctx context.Context, tc domain.TestCase, opts Options) d
 			break
 		}
 	}
+
+	base.CleanupResults = r.runCleanup(ctx, tc, ex)
 	return base
+}
+
+// runCleanup executes tc.Cleanup's db targets against the connections
+// configured for db.* assertions (see assertions.Engine.DBRegistry),
+// using ex (this test's OWN just-completed exchange) to resolve any
+// "{{response.<field>}}" placeholders in a filter — e.g. deleting the
+// document whose _id a create mutation just returned. Always attempted
+// when a cleanup: block is present, regardless of whether the test's own
+// assertions passed, failed, or errored: even a test whose assertions
+// failed may still have created a real record that needs removing (the
+// two most common cases in practice — an assertion catching a subtly
+// wrong response after the record was already written, or a flaky/slow
+// downstream causing a timeout after the write already committed — both
+// leave exactly the kind of orphaned record cleanup exists to prevent).
+// The only case cleanup is skipped is a request that never got far
+// enough to send at all (interpolation error before Do() is called) —
+// runOne already returns before this point in that case, so nothing
+// extra is needed here to exclude it.
+func (r *Runner) runCleanup(ctx context.Context, tc domain.TestCase, ex domain.Exchange) []domain.CleanupResult {
+	if len(tc.Cleanup.DB) == 0 {
+		return nil
+	}
+	reg := r.assert.DBRegistry()
+	if reg == nil {
+		// A cleanup: block exists but no db connections are configured
+		// at all — same "config problem, not a runtime one" shape as
+		// assert.db's own "no db connections configured" case, but
+		// reported per-target here since CleanupResult is what a
+		// reporter actually prints.
+		var out []domain.CleanupResult
+		for conn, targets := range tc.Cleanup.DB {
+			for _, t := range targets {
+				out = append(out, domain.CleanupResult{
+					Connection: conn, Collection: t.Collection, DeletedCount: -1,
+					Error: fmt.Sprintf("cleanup.db.%s used but no db connections are configured", conn),
+				})
+			}
+		}
+		return out
+	}
+
+	var out []domain.CleanupResult
+	for conn, targets := range tc.Cleanup.DB {
+		for _, t := range targets {
+			filter, err := r.env.InterpolateFilterAgainstResponse(t.Filter, ex)
+			if err != nil {
+				out = append(out, domain.CleanupResult{
+					Connection: conn, Collection: t.Collection, DeletedCount: -1, Error: err.Error(),
+				})
+				continue
+			}
+			deleted, err := reg.DeleteMongo(ctx, conn, t.Collection, filter)
+			if err != nil {
+				out = append(out, domain.CleanupResult{
+					Connection: conn, Collection: t.Collection, DeletedCount: -1, Error: err.Error(),
+				})
+				continue
+			}
+			out = append(out, domain.CleanupResult{Connection: conn, Collection: t.Collection, DeletedCount: deleted})
+		}
+	}
+	return out
 }
 
 func buildReport(env string, results []domain.TestResult, duration time.Duration) domain.Report {

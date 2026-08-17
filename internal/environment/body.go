@@ -24,7 +24,7 @@ func (r *Resolver) interpolateBody(b domain.BodyTemplate) ([]byte, string, error
 		}
 		return []byte(val), ct, nil
 	}
-	expanded, err := r.interpolateJSONValue(b.JSON)
+	expanded, err := r.interpolateJSONValue(b.JSON, r.Interpolate)
 	if err != nil {
 		return nil, "", err
 	}
@@ -35,14 +35,20 @@ func (r *Resolver) interpolateBody(b domain.BodyTemplate) ([]byte, string, error
 	return out, "application/json", nil
 }
 
-func (r *Resolver) interpolateJSONValue(v any) (any, error) {
+// interpolateJSONValue recursively expands every string leaf in a decoded
+// JSON tree (map[string]any / []any / scalar) using interpolateStr. The
+// interpolation function is a parameter — not always r.Interpolate —
+// so the same tree-walk serves cleanup:'s db.<connection>.filter values,
+// which need r.InterpolateAgainstResponse instead (see CleanupSpec's doc
+// comment for why cleanup has its own placeholder form).
+func (r *Resolver) interpolateJSONValue(v any, interpolateStr func(string) (string, error)) (any, error) {
 	switch t := v.(type) {
 	case string:
-		return r.Interpolate(t)
+		return interpolateStr(t)
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
-			expanded, err := r.interpolateJSONValue(val)
+			expanded, err := r.interpolateJSONValue(val, interpolateStr)
 			if err != nil {
 				return nil, err
 			}
@@ -52,7 +58,7 @@ func (r *Resolver) interpolateJSONValue(v any) (any, error) {
 	case []any:
 		out := make([]any, len(t))
 		for i, val := range t {
-			expanded, err := r.interpolateJSONValue(val)
+			expanded, err := r.interpolateJSONValue(val, interpolateStr)
 			if err != nil {
 				return nil, err
 			}

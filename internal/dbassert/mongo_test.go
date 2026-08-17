@@ -18,7 +18,7 @@ func mongoTestDSN() string {
 	if v := os.Getenv("APILENS_TEST_MONGO_DSN"); v != "" {
 		return v
 	}
-	return "mongodb://127.0.0.1:27117/apilens_dbassert_test"
+	return "mongodb://127.0.0.1:27017/apilens_dbassert_test"
 }
 
 // skipIfNoMongo pings a fresh client and skips the test if no MongoDB
@@ -238,5 +238,159 @@ func TestMongoDatabaseNameFromDSN(t *testing.T) {
 		if got != c.want {
 			t.Errorf("dsn %q: got %q, want %q", c.dsn, got, c.want)
 		}
+	}
+}
+
+func TestListCollectionNames_ReturnsRealCollections(t *testing.T) {
+	skipIfNoMongo(t)
+
+	reg := NewRegistry(map[string]ConnectionConfig{
+		"main": {Driver: "mongodb", DSN: mongoTestDSN()},
+	})
+	t.Cleanup(reg.Close)
+
+	// Seed two distinctly-named collections so there is something
+	// real to find.
+	db, err := reg.getMongo("main")
+	if err != nil {
+		t.Fatalf("getMongo: %v", err)
+	}
+	ctx := context.Background()
+	if _, err := db.Collection("apilens_list_test_a").InsertOne(ctx, map[string]any{"x": 1}); err != nil {
+		t.Fatalf("seeding collection a: %v", err)
+	}
+	if _, err := db.Collection("apilens_list_test_b").InsertOne(ctx, map[string]any{"x": 1}); err != nil {
+		t.Fatalf("seeding collection b: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = db.Collection("apilens_list_test_a").Drop(ctx)
+		_ = db.Collection("apilens_list_test_b").Drop(ctx)
+	})
+
+	names, err := reg.ListCollectionNames("main")
+	if err != nil {
+		t.Fatalf("ListCollectionNames: %v", err)
+	}
+
+	found := map[string]bool{}
+	for _, n := range names {
+		found[n] = true
+	}
+	if !found["apilens_list_test_a"] {
+		t.Errorf("expected apilens_list_test_a in %v", names)
+	}
+	if !found["apilens_list_test_b"] {
+		t.Errorf("expected apilens_list_test_b in %v", names)
+	}
+}
+
+func TestListCollectionNames_UnconfiguredConnectionIsError(t *testing.T) {
+	reg := NewRegistry(nil)
+	_, err := reg.ListCollectionNames("does-not-exist")
+	if err == nil {
+		t.Fatal("expected an error for an unconfigured connection name")
+	}
+}
+
+func TestListCollectionNames_SQLConnectionIsError(t *testing.T) {
+	reg := NewRegistry(map[string]ConnectionConfig{
+		"main": {Driver: "sqlite", DSN: ":memory:"},
+	})
+	t.Cleanup(reg.Close)
+	_, err := reg.ListCollectionNames("main")
+	if err == nil {
+		t.Fatal("expected an error when a sqlite-configured connection is asked for MongoDB collection names")
+	}
+}
+
+func TestRowCountMongo_HexStringFilterMatchesRealObjectIDField(t *testing.T) {
+	// Regression test for a real bug found while building this feature:
+	// a document's _id is commonly stored as a genuine BSON ObjectID, not
+	// a string. A naive filter of {"_id": "<hex string>"} would silently
+	// match zero documents against such a field unless toBSONFilter
+	// coerces hex-looking string values to also match the ObjectID form.
+	skipIfNoMongo(t)
+
+	reg := NewRegistry(map[string]ConnectionConfig{
+		"main": {Driver: "mongodb", DSN: mongoTestDSN()},
+	})
+	t.Cleanup(reg.Close)
+
+	db, err := reg.getMongo("main")
+	if err != nil {
+		t.Fatalf("getMongo: %v", err)
+	}
+	ctx := context.Background()
+	coll := db.Collection("apilens_objectid_coercion_test")
+	t.Cleanup(func() { _ = coll.Drop(ctx) })
+
+	oid := bson.NewObjectID()
+	if _, err := coll.InsertOne(ctx, bson.M{"_id": oid, "name": "ada"}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// The exact shape internal/generate's __typename walker would
+	// produce: a plain hex string copied straight from a JSON response.
+	count, err := reg.RowCountMongo(ctx, "main", "apilens_objectid_coercion_test", map[string]any{"_id": oid.Hex()})
+	if err != nil {
+		t.Fatalf("RowCountMongo: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (hex string filter should match a real ObjectID _id field)", count)
+	}
+}
+
+func TestRowCountMongo_HexStringFilterStillMatchesStringIDField(t *testing.T) {
+	// The coercion must not break the (also common) case where _id is
+	// genuinely stored as a plain string, not an ObjectID.
+	skipIfNoMongo(t)
+
+	reg := NewRegistry(map[string]ConnectionConfig{
+		"main": {Driver: "mongodb", DSN: mongoTestDSN()},
+	})
+	t.Cleanup(reg.Close)
+
+	db, err := reg.getMongo("main")
+	if err != nil {
+		t.Fatalf("getMongo: %v", err)
+	}
+	ctx := context.Background()
+	coll := db.Collection("apilens_string_id_test")
+	t.Cleanup(func() { _ = coll.Drop(ctx) })
+
+	stringID := "6a81dcfa6f6ebb3f76b802d4" // hex-looking, but stored as a plain string _id
+	if _, err := coll.InsertOne(ctx, bson.M{"_id": stringID, "name": "ada"}); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	count, err := reg.RowCountMongo(ctx, "main", "apilens_string_id_test", map[string]any{"_id": stringID})
+	if err != nil {
+		t.Fatalf("RowCountMongo: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("count = %d, want 1 (hex-looking filter should still match a genuine string _id)", count)
+	}
+}
+
+func TestCoerceObjectIDLookingValues_LeavesNonHexStringsUnchanged(t *testing.T) {
+	m := map[string]any{"email": "ada@example.com", "status": "paid"}
+	out := coerceObjectIDLookingValues(m)
+	if out["email"] != "ada@example.com" {
+		t.Errorf("email = %v, want unchanged", out["email"])
+	}
+	if out["status"] != "paid" {
+		t.Errorf("status = %v, want unchanged", out["status"])
+	}
+}
+
+func TestCoerceObjectIDLookingValues_LeavesNestedOperatorsUnchanged(t *testing.T) {
+	m := map[string]any{"total": map[string]any{"$gt": 100}}
+	out := coerceObjectIDLookingValues(m)
+	nested, ok := out["total"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected nested operator map to survive unchanged, got %#v", out["total"])
+	}
+	if nested["$gt"] != 100 {
+		t.Errorf("$gt = %v, want 100", nested["$gt"])
 	}
 }

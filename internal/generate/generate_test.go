@@ -230,6 +230,107 @@ func TestFromExchange_GraphQLAddsBearerAuthFromEnv(t *testing.T) {
 	}
 }
 
+func TestFromExchange_DBHintsAddDBBlockToGraphQLCapture(t *testing.T) {
+	dir := t.TempDir()
+	svc := New(dir)
+	ex := sampleExchange()
+	ex.Request.URL = "http://localhost:3000/graphql"
+	ex.Request.Body = []byte(`{"query":"mutation CreateAdvance($input: CreateAdvanceInput!) { createAdvance(input: $input) { _id total } }","operationName":"CreateAdvance"}`)
+	ex.Response.StatusCode = 200
+	ex.Response.Body = []byte(`{"data":{"createAdvance":{"__typename":"Advance","_id":"6a81dcfa6f6ebb3f76b802d4","total":20000}}}`)
+
+	g, err := svc.FromExchange(ex, Options{
+		DBHints: &DBHintOptions{
+			Connection: "main",
+			Lister:     fakeCollectionLister{names: []string{"advances", "receipts"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("FromExchange: %v", err)
+	}
+	if len(g.SkippedHints) != 0 {
+		t.Errorf("expected no skipped hints, got %v", g.SkippedHints)
+	}
+
+	specs := g.Test.Assert.DB["main"]
+	if len(specs) != 1 || specs[0].Collection != "advances" {
+		t.Fatalf("expected a db check against advances, got %+v", specs)
+	}
+
+	// The written YAML must actually contain the db block, not just the
+	// in-memory TestCase -- MarshalYAML previously dropped Assert.DB
+	// entirely.
+	content := string(g.Content)
+	if !containsStr(content, "collection: advances") {
+		t.Errorf("generated YAML missing the db.main.collection block:\n%s", content)
+	}
+	if !containsStr(content, "6a81dcfa6f6ebb3f76b802d4") {
+		t.Errorf("generated YAML missing the _id filter value:\n%s", content)
+	}
+}
+
+func TestFromExchange_DBHintsNilOptionSkipsEnrichmentEntirely(t *testing.T) {
+	dir := t.TempDir()
+	svc := New(dir)
+	ex := sampleExchange()
+	ex.Request.URL = "http://localhost:3000/graphql"
+	ex.Request.Body = []byte(`{"query":"mutation CreateAdvance { createAdvance { _id } }"}`)
+	ex.Response.Body = []byte(`{"data":{"createAdvance":{"__typename":"Advance","_id":"6a81dcfa6f6ebb3f76b802d4"}}}`)
+
+	g, err := svc.FromExchange(ex, Options{}) // no DBHints at all
+	if err != nil {
+		t.Fatalf("FromExchange: %v", err)
+	}
+	if len(g.Test.Assert.DB) != 0 {
+		t.Errorf("expected no db checks when DBHints is nil, got %+v", g.Test.Assert.DB)
+	}
+}
+
+func TestMarshalYAML_RoundTripsDBBlock(t *testing.T) {
+	exists := true
+	tc := domain.TestCase{
+		Name: "Roundtrip db block",
+		Request: domain.RequestTemplate{
+			Method: "GET",
+			URL:    "{{base_url}}/health",
+		},
+		Assert: domain.AssertionSpec{
+			Status: &domain.StatusSpec{Equals: intPtr(200)},
+			DB: map[string][]domain.DBSpec{
+				"main": {
+					{Collection: "advances", Filter: map[string]any{"_id": "abc123"}, Exists: &exists},
+				},
+			},
+		},
+	}
+	out, err := MarshalYAML(tc)
+	if err != nil {
+		t.Fatalf("MarshalYAML: %v", err)
+	}
+
+	var doc struct {
+		Assert struct {
+			DB map[string][]struct {
+				Collection string `yaml:"collection"`
+				Filter     any    `yaml:"filter"`
+				Exists     bool   `yaml:"exists"`
+			} `yaml:"db"`
+		} `yaml:"assert"`
+	}
+	if err := yaml.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("re-parsing generated YAML: %v\n%s", err, out)
+	}
+	specs, ok := doc.Assert.DB["main"]
+	if !ok || len(specs) != 1 {
+		t.Fatalf("expected db.main with 1 entry after round-trip, got %+v\n%s", doc.Assert.DB, out)
+	}
+	if specs[0].Collection != "advances" || !specs[0].Exists {
+		t.Errorf("round-tripped spec = %+v", specs[0])
+	}
+}
+
+func intPtr(i int) *int { return &i }
+
 func containsStr(s, substr string) bool {
 	for i := 0; i+len(substr) <= len(s); i++ {
 		if s[i:i+len(substr)] == substr {

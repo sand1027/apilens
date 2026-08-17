@@ -7,6 +7,12 @@
 // later DSL version, not a silent v1 add-on".
 package testdef
 
+import (
+	"fmt"
+
+	"gopkg.in/yaml.v3"
+)
+
 // document mirrors the raw YAML shape. yaml.v3 decodes into `any` for the
 // most flexible fields (json body, assertion values) so we can validate
 // shape ourselves and produce ErrConfig with a clear message rather than a
@@ -23,8 +29,12 @@ type document struct {
 	// Only meaningful (and only permitted) under version: 2.
 	ID string `yaml:"id"`
 
-	Request requestDoc `yaml:"request"`
-	Assert  assertDoc  `yaml:"assert"`
+	Request requestDoc  `yaml:"request"`
+	Assert  assertDoc   `yaml:"assert"`
+	// Cleanup is a sibling of assert, not nested inside it — see
+	// domain.CleanupSpec's doc comment for why teardown is a distinct
+	// top-level concept from assertion checks.
+	Cleanup cleanupDoc `yaml:"cleanup"`
 }
 
 type requestDoc struct {
@@ -69,8 +79,11 @@ type assertDoc struct {
 	GraphQL  *graphqlAssertDoc    `yaml:"graphql"`
 	// DB is a v9 addition (plan.md v9: "Database assertions"). Key is
 	// the connection name configured under db.connections in
-	// config.yaml.
-	DB map[string]dbDoc `yaml:"db"`
+	// config.yaml. Each connection's value may be written as either a
+	// single mapping (one check) or a list of mappings (multiple checks
+	// against the same connection) — dbDocList.UnmarshalYAML normalizes
+	// both forms to a slice so compile.go only ever deals with one shape.
+	DB map[string]dbDocList `yaml:"db"`
 }
 
 type graphqlAssertDoc struct {
@@ -92,6 +105,35 @@ type dbDoc struct {
 	RowCountEquals *int  `yaml:"row_count_equals"`
 	Exists         *bool `yaml:"exists"`
 	Equals         any   `yaml:"equals"`
+}
+
+// dbDocList accepts either a single db.<connection> mapping (the original
+// v9 shape: one check per connection) or a YAML sequence of mappings (the
+// extended shape: multiple checks against the same connection, e.g. one
+// per collection a mutation is expected to have written to). Both forms
+// decode to the same []dbDoc so compile.go never needs to branch on which
+// one was written.
+type dbDocList []dbDoc
+
+func (l *dbDocList) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.SequenceNode:
+		var docs []dbDoc
+		if err := value.Decode(&docs); err != nil {
+			return err
+		}
+		*l = docs
+		return nil
+	case yaml.MappingNode:
+		var doc dbDoc
+		if err := value.Decode(&doc); err != nil {
+			return err
+		}
+		*l = []dbDoc{doc}
+		return nil
+	default:
+		return fmt.Errorf("db.<connection> must be a mapping (one check) or a list of mappings (multiple checks), got %v", value.Kind)
+	}
 }
 
 type statusDoc struct {
@@ -127,4 +169,42 @@ type jsonDoc struct {
 
 type durationDoc struct {
 	LessThan *int `yaml:"less_than"`
+}
+
+// cleanupDoc mirrors the (MongoDB-only, for now) db.<connection> shape
+// used by assertDoc's DB field, but for deletion rather than a read
+// check — see domain.CleanupSpec's doc comment. Reuses dbDocList's
+// single-mapping-or-list UnmarshalYAML so `cleanup.main` can be written
+// as one collection or a list of collections, same convention as
+// `assert.db.main`.
+type cleanupDoc struct {
+	DB map[string]cleanupDocList `yaml:"db"`
+}
+
+type cleanupItemDoc struct {
+	Collection string `yaml:"collection"`
+	Filter     any    `yaml:"filter"`
+}
+
+type cleanupDocList []cleanupItemDoc
+
+func (l *cleanupDocList) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.SequenceNode:
+		var docs []cleanupItemDoc
+		if err := value.Decode(&docs); err != nil {
+			return err
+		}
+		*l = docs
+		return nil
+	case yaml.MappingNode:
+		var doc cleanupItemDoc
+		if err := value.Decode(&doc); err != nil {
+			return err
+		}
+		*l = []cleanupItemDoc{doc}
+		return nil
+	default:
+		return fmt.Errorf("cleanup.db.<connection> must be a mapping (one target) or a list of mappings, got %v", value.Kind)
+	}
 }
