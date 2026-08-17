@@ -123,6 +123,12 @@ type Engine interface {
 	// List reads the registry as it stands (no implicit re-discover —
 	// docs/05-cli.md "apilens list").
 	List(filter EndpointFilter) []Endpoint
+
+	// Coverage cross-references the registry (as it stands, same
+	// no-implicit-re-discover posture as List) against every compiled
+	// test under .apilens/tests, reporting which discovered endpoints
+	// have at least one test and which have none (`apilens coverage`).
+	Coverage() (*CoverageReport, error)
 	// Inspect resolves ref (a path or endpoint ID) against the registry
 	// spec by default; InspectRef.Live triggers a probe through the same
 	// shared runner every other live call uses (ADR-018).
@@ -208,6 +214,32 @@ type EndpointFilter struct {
 	Path   string
 	Tag    string
 	Source string
+}
+
+// CoverageReport mirrors app.CoverageResult. Defined here (rather than a
+// type alias like RunFilter) since app.CoverageEndpoint's own Tests field
+// is a plain []string that needs no translation — a straight field copy
+// is clearer than an alias for a type this small.
+type CoverageReport struct {
+	Total   int
+	Covered []CoverageEndpoint
+	Missing []CoverageEndpoint
+}
+
+// CoverageEndpoint mirrors app.CoverageEndpoint.
+type CoverageEndpoint struct {
+	Method string
+	Path   string
+	Tests  []string
+}
+
+// Percent is Covered/Total*100, matching app.CoverageResult.Percent's
+// zero-denominator convention (0 when Total is 0).
+func (c CoverageReport) Percent() float64 {
+	if c.Total == 0 {
+		return 0
+	}
+	return float64(len(c.Covered)) / float64(c.Total) * 100
 }
 
 // ReplayOverrides mirrors replay.Overrides (v4).
@@ -409,6 +441,21 @@ func (e *engine) List(filter EndpointFilter) []Endpoint {
 		Tag:    filter.Tag,
 		Source: filter.Source,
 	})
+}
+
+func (e *engine) Coverage() (*CoverageReport, error) {
+	res, err := e.app.Coverage()
+	if err != nil {
+		return nil, err
+	}
+	out := &CoverageReport{Total: res.Total}
+	for _, ep := range res.Covered {
+		out.Covered = append(out.Covered, CoverageEndpoint{Method: ep.Method, Path: ep.Path, Tests: ep.Tests})
+	}
+	for _, ep := range res.Missing {
+		out.Missing = append(out.Missing, CoverageEndpoint{Method: ep.Method, Path: ep.Path, Tests: ep.Tests})
+	}
+	return out, nil
 }
 
 func (e *engine) Inspect(ctx context.Context, ref InspectRef) (*Inspection, error) {

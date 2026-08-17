@@ -30,8 +30,9 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 		loadIterations int
 		loadWorkers    int
 
-		out       string
-		outFormat string
+		out             string
+		outFormat       string
+		captureResponse bool
 	)
 
 	cmd := &cobra.Command{
@@ -50,10 +51,11 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 				Sequential:     sequential,
 				Parallel:       parallel,
 				FailFast:       failFast,
-				ReporterFormat: flags.format,
-				Quiet:          flags.quiet,
-				Out:            out,
-				OutFormat:      outFormat,
+				ReporterFormat:  flags.format,
+				Quiet:           flags.quiet,
+				Out:             out,
+				OutFormat:       outFormat,
+				CaptureResponse: captureResponse,
 			}
 
 			if load {
@@ -94,6 +96,7 @@ func newRunCommand(flags *globalFlags) *cobra.Command {
 	cmd.Flags().IntVar(&loadWorkers, "workers", 0, "Load mode: concurrent workers (default 10, requires --load)")
 	cmd.Flags().StringVar(&out, "out", "", "Also write the report to this file (e.g. .apilens/reports/latest.json), independent of --format")
 	cmd.Flags().StringVar(&outFormat, "out-format", "", "Format for --out: json or junit (default: inferred from --out's extension, .xml -> junit)")
+	cmd.Flags().BoolVar(&captureResponse, "capture-response", false, "Include each test's actual (redacted) response body/headers in the report, like Postman's collection runner")
 	return cmd
 }
 

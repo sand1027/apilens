@@ -1,9 +1,11 @@
 package reporter
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"os"
+	"unicode/utf8"
 
 	"github.com/sandeepv/apilens/internal/domain"
 )
@@ -11,8 +13,12 @@ import (
 // JSONReporter buffers results and writes the whole document once in
 // SuiteFinished, so the output is always a single valid JSON value
 // (docs/04-interfaces.md section 9). Schema matches
-// docs/11-risks-and-gaps.md G25. No raw headers or bodies are included by
-// default (docs/09-security.md section 3, ADR-006).
+// docs/11-risks-and-gaps.md G25. Headers/bodies are only ever present when
+// the caller explicitly opted in (`apilens run --capture-response` ->
+// testrunner.WithCaptureResponse); even then, they arrive on
+// domain.TestResult already redacted (docs/09-security.md section 3,
+// ADR-006) — this reporter never redacts anything itself, it only decides
+// how to encode what it was given.
 type JSONReporter struct {
 	out  io.Writer
 	meta domain.SuiteMeta
@@ -76,6 +82,19 @@ type jsonResult struct {
 	Assertions    []jsonAssertion `json:"assertions,omitempty"`
 	Error         string          `json:"error,omitempty"`
 	Cleanup       []jsonCleanup   `json:"cleanup,omitempty"`
+	// ResponseHeaders/ResponseBody are only present when
+	// --capture-response was used. ResponseBody is embedded as native
+	// JSON (json.RawMessage) when the body actually parses as JSON —
+	// the common case for a REST/GraphQL API — so a report reader sees
+	// real nested structure instead of an escaped string blob;
+	// non-JSON bodies fall back to a plain string, further falling back
+	// to base64 (BodyEncoding: "base64") only if the bytes are not valid
+	// UTF-8 either (e.g. a binary response) — this mirrors how Postman
+	// itself picks a display encoding based on content type, per the
+	// user's own framing of this feature.
+	ResponseHeaders map[string][]string `json:"response_headers,omitempty"`
+	ResponseBody    json.RawMessage     `json:"response_body,omitempty"`
+	BodyEncoding    string              `json:"body_encoding,omitempty"`
 }
 
 type jsonDocument struct {
@@ -85,6 +104,38 @@ type jsonDocument struct {
 	SuccessPercent int           `json:"success_percent"`
 	DurationMS     int64         `json:"duration_ms"`
 	Results        []jsonResult  `json:"results"`
+}
+
+// encodeResponseBody picks the cheapest lossless JSON representation of a
+// captured (already-redacted) response body:
+//   - valid JSON -> embedded as-is via json.RawMessage (no escaping, no
+//     encoding label — this is the common case for a REST/GraphQL API and
+//     the whole point of capturing the body in the first place: so a
+//     report reader can navigate real structure, not an escaped string)
+//   - valid UTF-8 but not JSON -> re-marshaled as a plain JSON string
+//   - neither (binary) -> base64, with body_encoding: "base64" so a
+//     reader knows to decode it
+//
+// Returns (nil, "") for an empty/nil body so omitempty drops both fields
+// entirely rather than emitting response_body: "".
+func encodeResponseBody(body []byte) (json.RawMessage, string) {
+	if len(body) == 0 {
+		return nil, ""
+	}
+	if json.Valid(body) {
+		return json.RawMessage(body), ""
+	}
+	if utf8.Valid(body) {
+		asString, err := json.Marshal(string(body))
+		if err == nil {
+			return json.RawMessage(asString), ""
+		}
+	}
+	encoded, err := json.Marshal(base64.StdEncoding.EncodeToString(body))
+	if err != nil {
+		return nil, ""
+	}
+	return json.RawMessage(encoded), "base64"
 }
 
 func (j *JSONReporter) SuiteFinished(report domain.Report) error {
@@ -109,7 +160,8 @@ func (j *JSONReporter) SuiteFinished(report domain.Report) error {
 				Error:        c.Error,
 			})
 		}
-		results = append(results, jsonResult{
+		body, bodyEncoding := encodeResponseBody(r.ResponseBody)
+		jr := jsonResult{
 			Name:          r.Name,
 			File:          r.File,
 			DisplayMethod: r.DisplayMethod,
@@ -122,7 +174,13 @@ func (j *JSONReporter) SuiteFinished(report domain.Report) error {
 			Assertions:    assertions,
 			Error:         r.Error,
 			Cleanup:       cleanup,
-		})
+			ResponseBody:  body,
+			BodyEncoding:  bodyEncoding,
+		}
+		if r.ResponseHeaders != nil {
+			jr.ResponseHeaders = r.ResponseHeaders
+		}
+		results = append(results, jr)
 	}
 	doc := jsonDocument{
 		Version:        1,

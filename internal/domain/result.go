@@ -34,6 +34,21 @@ type TestResult struct {
 	DurationMS    int64
 	Assertions    []AssertionResult
 	Error         string // populated when Status == errored
+	// ResponseBody/ResponseHeaders hold the actual HTTP response this
+	// test received — the same "show me the data, not just pass/fail"
+	// capability Postman's collection runner has always had. Populated
+	// ONLY when the caller opts in (testrunner.WithCaptureResponse /
+	// `apilens run --capture-response`); empty otherwise, since a
+	// response body can be large and, redacted or not, is strictly more
+	// data exposure than a plain pass/fail summary. Redaction (masking
+	// sensitive JSON keys, per internal/security.Redactor) is applied
+	// BEFORE this field is populated — the same redacted-by-default
+	// posture every other display/report path in this codebase already
+	// uses (docs/09-security.md, ADR-006) — so this is never a way to
+	// accidentally leak a secret into a checked-in report file that
+	// wouldn't otherwise have shown up in, say, `apilens history show`.
+	ResponseBody    []byte
+	ResponseHeaders map[string][]string
 	// CleanupResults reports the outcome of this test's cleanup: block,
 	// if it had one — kept as its own field, separate from Assertions,
 	// because a cleanup failure is not an assertion failure: it never

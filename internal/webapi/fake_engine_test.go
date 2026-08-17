@@ -33,6 +33,7 @@ type fakeEngine struct {
 	runLoadFn          func(ctx context.Context, filter apilens.RunFilter, opts apilens.LoadOptions) (*apilens.LoadReport, error)
 	recordFn           func(opts apilens.RecordOptions) (apilens.RecordResult, error)
 	generateFromSpecFn func(opts apilens.GenerateFromSpecOptions) (apilens.GenerateFromSpecResult, error)
+	coverageFn         func() (*apilens.CoverageReport, error)
 }
 
 func (f *fakeEngine) Init(ctx context.Context, path string, force bool) (apilens.InitResult, error) {
@@ -54,6 +55,13 @@ func (f *fakeEngine) List(filter apilens.EndpointFilter) []apilens.Endpoint {
 		return f.listFn(filter)
 	}
 	return nil
+}
+
+func (f *fakeEngine) Coverage() (*apilens.CoverageReport, error) {
+	if f.coverageFn != nil {
+		return f.coverageFn()
+	}
+	return &apilens.CoverageReport{}, nil
 }
 
 func (f *fakeEngine) Inspect(ctx context.Context, ref apilens.InspectRef) (*apilens.Inspection, error) {
